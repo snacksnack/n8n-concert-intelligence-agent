@@ -1,0 +1,1100 @@
+{
+  "name": "concert-intelligence-agent",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        2528,
+        1344
+      ],
+      "id": "0ced61e2-ec1e-4cdf-93e8-3bf8d756d6af",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "operation": "recentlyPlayed"
+      },
+      "type": "n8n-nodes-base.spotify",
+      "typeVersion": 1,
+      "position": [
+        2752,
+        1072
+      ],
+      "id": "0b43e69b-e5f8-4436-a956-11971f0aee62",
+      "name": "Get the recently played tracks",
+      "credentials": {
+        "spotifyOAuth2Api": {
+          "id": "DYX2e4Iy4Laa0AiF",
+          "name": "Spotify account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://api.spotify.com/v1/me/top/artists?time_range=short_term&limit=50",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2752,
+        1264
+      ],
+      "id": "e350baf6-1b70-4903-8346-947dbbd533b9",
+      "name": "Fave Artist Short Term",
+      "credentials": {
+        "spotifyOAuth2Api": {
+          "id": "DYX2e4Iy4Laa0AiF",
+          "name": "Spotify account"
+        },
+        "oAuth2Api": {
+          "id": "D3NEl7XaR1b3Z0mg",
+          "name": "Spotify Top Artists"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://api.spotify.com/v1/me/top/artists?time_range=medium_term&limit=50",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2752,
+        1456
+      ],
+      "id": "186ce470-c28a-4491-8a6e-9d6ee768d031",
+      "name": "Fave Artist Medium Term",
+      "credentials": {
+        "spotifyOAuth2Api": {
+          "id": "DYX2e4Iy4Laa0AiF",
+          "name": "Spotify account"
+        },
+        "oAuth2Api": {
+          "id": "D3NEl7XaR1b3Z0mg",
+          "name": "Spotify Top Artists"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://api.spotify.com/v1/me/top/artists?time_range=long_term&limit=50",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2752,
+        1648
+      ],
+      "id": "63264360-aa27-42b3-b9ed-8ff3d0aa851f",
+      "name": "Fave Artist Long Term",
+      "credentials": {
+        "spotifyOAuth2Api": {
+          "id": "DYX2e4Iy4Laa0AiF",
+          "name": "Spotify account"
+        },
+        "oAuth2Api": {
+          "id": "D3NEl7XaR1b3Z0mg",
+          "name": "Spotify Top Artists"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rpRaw = $('Get the recently played tracks').all();\nconst recentlyPlayed = rpRaw.map(item => item.json);\nconst shortTerm = $('Fave Artist Short Term').first().json.items || [];\nconst mediumTerm = $('Fave Artist Medium Term').first().json.items || [];\nconst longTerm = $('Fave Artist Long Term').first().json.items || [];\n\nconst recentMap = {};\nfor (const track of recentlyPlayed) {\n  const artist = track.track.artists[0];\n  const playedAt = new Date(track.played_at);\n  if (!recentMap[artist.id]) {\n    recentMap[artist.id] = { last_played_at: playedAt, play_count: 0 };\n  }\n  if (playedAt > recentMap[artist.id].last_played_at) {\n    recentMap[artist.id].last_played_at = playedAt;\n  }\n  recentMap[artist.id].play_count++;\n}\n\nfunction normalizeName(name) {\n  return name\n    .toLowerCase()\n    .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')\n    .replace(/\\s*[\\(\\[].*?[\\)\\]]\\s*/g, '')\n    .replace(/\\bfeat\\.?\\b.*$/i, '')\n    .replace(/\\bft\\.?\\b.*$/i, '')\n    .trim();\n}\n\nconst artistMap = {};\n\nfunction addArtist(artist, termKey, rank) {\n  if (!artistMap[artist.id]) {\n    artistMap[artist.id] = {\n      id: artist.id,\n      name: artist.name,\n      name_normalized: normalizeName(artist.name),\n      genres: artist.genres || [],\n      short_term_rank: null,\n      medium_term_rank: null,\n      long_term_rank: null,\n      last_played_at: null,\n      days_since_played: 999,\n      recent_play_count: 0,\n    };\n  }\n  artistMap[artist.id][termKey] = rank;\n}\n\nshortTerm.forEach((a, i) => addArtist(a, 'short_term_rank', i + 1));\nmediumTerm.forEach((a, i) => addArtist(a, 'medium_term_rank', i + 1));\nlongTerm.forEach((a, i) => addArtist(a, 'long_term_rank', i + 1));\n\nconst now = new Date();\nfor (const [id, data] of Object.entries(recentMap)) {\n  if (artistMap[id]) {\n    artistMap[id].last_played_at = data.last_played_at.toISOString();\n    artistMap[id].days_since_played = Math.floor((now - data.last_played_at) / (1000 * 60 * 60 * 24));\n    artistMap[id].recent_play_count = data.play_count;\n  }\n}\n\nconst artists = Object.values(artistMap).sort((a, b) => {\n  const aRank = a.short_term_rank ?? a.medium_term_rank ?? a.long_term_rank ?? 999;\n  const bRank = b.short_term_rank ?? b.medium_term_rank ?? b.long_term_rank ?? 999;\n  return aRank - bRank;\n});\n\nreturn artists.map(a => ({ json: a }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3200,
+        1344
+      ],
+      "id": "7faeced0-5390-4e7d-8bd1-1b45eaf24a67",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "url": "https://app.ticketmaster.com/discovery/v2/events.json",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$vars.TICKETMASTER_API_KEY}}"
+            },
+            {
+              "name": "latlong",
+              "value": "40.6928,-73.9903"
+            },
+            {
+              "name": "radius",
+              "value": "50"
+            },
+            {
+              "name": "unit",
+              "value": "miles"
+            },
+            {
+              "name": "classificationName",
+              "value": "music"
+            },
+            {
+              "name": "size",
+              "value": "200"
+            },
+            {
+              "name": "startDateTime",
+              "value": "={{ $now.toUTC().toFormat(\"yyyy-MM-dd'T'HH:mm:ss'Z'\") }}"
+            },
+            {
+              "name": "endDateTime",
+              "value": "={{ $now.plus({months: 6}).toUTC().toFormat(\"yyyy-MM-dd'T'HH:mm:ss'Z'\") }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2752,
+        1840
+      ],
+      "id": "a8d8b89b-0bb8-4e22-9c29-653c91380153",
+      "name": "TicketMaster Request"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        3424,
+        1344
+      ],
+      "id": "d239a49f-7a78-470e-81b0-ea9f36a9e3ce",
+      "name": "Loop Over Items",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "amount": 0.5
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3872,
+        1344
+      ],
+      "id": "d6b01450-d448-4140-9914-0cdc202325c5",
+      "name": "Wait",
+      "webhookId": "8d90e9d5-3743-43c5-91ac-d828f2afa87d",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "url": "=https://rest.bandsintown.com/artists/{{ encodeURIComponent($json.name) }}/events",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "app_id",
+              "value": "concert-intelligence-agent"
+            },
+            {
+              "name": "date",
+              "value": "upcoming"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        3648,
+        1272
+      ],
+      "id": "7a91dbb2-4578-41a1-8f1e-0359c7ecf83a",
+      "name": "Request Bandsintown Evens",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "numberInputs": 4
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        2976,
+        1312
+      ],
+      "id": "6eae14d9-7564-4420-be12-b04d4fbcab71",
+      "name": "Merge Spotify Data"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the Spotify artist profile from the upstream Code node\nconst artists = $('Code in JavaScript').all().map(item => item.json);\n\n// Get the Ticketmaster response\nconst tmResponse = $input.first().json;\nconst events = tmResponse._embedded?.events || [];\n\n// User location (Downtown Brooklyn) for haversine distance\nconst USER_LAT = 40.6928;\nconst USER_LNG = -73.9903;\n\nfunction haversineMiles(lat1, lng1, lat2, lng2) {\n  const R = 3958.8;\n  const toRad = d => d * Math.PI / 180;\n  const dLat = toRad(lat2 - lat1);\n  const dLng = toRad(lng2 - lng1);\n  const a = Math.sin(dLat / 2) ** 2\n          + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;\n  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));\n}\n\nfunction normalizeName(name) {\n  return name\n    .toLowerCase()\n    .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')\n    .replace(/\\s*[\\(\\[].*?[\\)\\]]\\s*/g, '')\n    .replace(/\\bfeat\\.?\\b.*$/i, '')\n    .replace(/\\bft\\.?\\b.*$/i, '')\n    .trim();\n}\n\nfunction levenshtein(a, b) {\n  if (a === b) return 0;\n  if (!a.length) return b.length;\n  if (!b.length) return a.length;\n  const dp = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));\n  for (let i = 0; i <= a.length; i++) dp[i][0] = i;\n  for (let j = 0; j <= b.length; j++) dp[0][j] = j;\n  for (let i = 1; i <= a.length; i++) {\n    for (let j = 1; j <= b.length; j++) {\n      dp[i][j] = a[i - 1] === b[j - 1]\n        ? dp[i - 1][j - 1]\n        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);\n    }\n  }\n  return dp[a.length][b.length];\n}\n\nconst artistByNormalized = {};\nfor (const a of artists) {\n  artistByNormalized[a.name_normalized] = a;\n}\n\nfunction findMatch(eventArtistName) {\n  const normalized = normalizeName(eventArtistName);\n  if (artistByNormalized[normalized]) return artistByNormalized[normalized];\n  for (const a of artists) {\n    const dist = levenshtein(normalized, a.name_normalized);\n    const maxLen = Math.max(normalized.length, a.name_normalized.length);\n    if (dist <= 2 && dist / maxLen < 0.3) return a;\n  }\n  return null;\n}\n\nconst matched = [];\nfor (const ev of events) {\n  const attractions = ev._embedded?.attractions || [];\n  if (attractions.length === 0) continue;\n\n  let matchedArtist = null;\n  let matchedAttraction = null;\n  for (const att of attractions) {\n    const m = findMatch(att.name);\n    if (m) { matchedArtist = m; matchedAttraction = att; break; }\n  }\n  if (!matchedArtist) continue;\n\n  const headlinerName = attractions[0]?.name || null;\n  const isOpener = matchedAttraction.name !== headlinerName;\n\n  const venue = ev._embedded?.venues?.[0] || {};\n  const venueLat = parseFloat(venue.location?.latitude);\n  const venueLng = parseFloat(venue.location?.longitude);\n  const distance = (venueLat && venueLng)\n    ? Math.round(haversineMiles(USER_LAT, USER_LNG, venueLat, venueLng) * 10) / 10\n    : null;\n\n  const priceRanges = ev.priceRanges || [];\n  const priceMin = priceRanges[0]?.min ?? null;\n  const priceMax = priceRanges[0]?.max ?? null;\n\n  matched.push({\n    event_id: `tm:${ev.id}`,\n    source: 'ticketmaster',\n    artist_id: matchedArtist.id,\n    artist_name: matchedArtist.name,\n    artist_name_matched: matchedAttraction.name,\n    headliner_name: headlinerName,\n    is_opener: isOpener,\n    date: ev.dates?.start?.dateTime || ev.dates?.start?.localDate || null,\n    venue_name: venue.name || null,\n    venue_city: venue.city?.name || null,\n    venue_state: venue.state?.stateCode || null,\n    venue_lat: venueLat || null,\n    venue_lng: venueLng || null,\n    distance_miles: distance,\n    ticket_url: ev.url || null,\n    price_min: priceMin,\n    price_max: priceMax,\n    on_sale: ev.dates?.status?.code === 'onsale',\n    days_since_played: matchedArtist.days_since_played,\n    short_term_rank: matchedArtist.short_term_rank,\n    medium_term_rank: matchedArtist.medium_term_rank,\n    long_term_rank: matchedArtist.long_term_rank,\n    recent_play_count: matchedArtist.recent_play_count,\n  });\n}\n\nreturn matched.map(m => ({ json: m }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2976,
+        1840
+      ],
+      "id": "b122c7d1-b320-4876-947b-efd9b510d49a",
+      "name": "Match Concerts to Artists"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Venue fit tier list — personalized to user preference for small/indie venues\nconst VENUE_TIERS = {\n  // 10 points: DIY / intimate (~200-500 cap)\n  \"brooklyn made\": 10,\n  \"baby's all right\": 10,\n  \"union pool\": 10,\n  \"sultan room\": 10,\n  \"saint vitus\": 10,\n  \"tv eye\": 10,\n  \"market hotel\": 10,\n  \"trans-pecos\": 10,\n  \"public records\": 10,\n\n  // 7 points: mid-sized indie (~500-1500 cap)\n  \"music hall of williamsburg\": 7,\n  \"bowery ballroom\": 7,\n  \"mercury lounge\": 7,\n  \"knockdown center\": 7,\n  \"elsewhere\": 7,\n  \"brooklyn paramount\": 7,\n  \"le poisson rouge\": 7,\n  \"(le) poisson rouge\": 7,\n\n  // 5 points: larger but acceptable (~1500-3000 cap)\n  \"brooklyn steel\": 5,\n  \"webster hall\": 5,\n  \"warsaw\": 5,\n  \"kings theatre\": 5,\n  \"beacon theatre\": 5,\n  \"terminal 5\": 5,\n  \"brooklyn mirage\": 5,\n\n  // 1 point: large arenas/stadiums (actively dispreferred)\n  \"madison square garden\": 1,\n  \"barclays center\": 1,\n  \"metlife stadium\": 1,\n  \"prudential center\": 1,\n  \"forest hills stadium\": 1,\n  \"radio city music hall\": 1,\n};\nconst VENUE_DEFAULT = 3;\n\n// Score one event\nfunction scoreEvent(ev) {\n  // --- Recency (max 30)\n  let recency = 0;\n  const dsp = ev.days_since_played;\n  if (dsp === 0) recency = 30;\n  else if (dsp <= 7) recency = 25;\n  else if (dsp <= 30) recency = 15;\n  else if (dsp <= 90) recency = 5;\n  else recency = 0;\n\n  // --- Frequency (max 25)\n  const base = Math.min((ev.recent_play_count || 0) * 2, 15);\n  let rank_bonus = 0;\n  if (ev.short_term_rank != null) rank_bonus += ev.short_term_rank <= 10 ? 10 : 5;\n  if (ev.medium_term_rank != null) rank_bonus += ev.medium_term_rank <= 10 ? 5 : 3;\n  if (ev.long_term_rank != null) rank_bonus += ev.long_term_rank <= 10 ? 3 : 1;\n  const frequency = Math.min(base + rank_bonus, 25);\n\n  // --- Distance (max 20)\n  let distance = 10;\n  const d = ev.distance_miles;\n  if (d != null) {\n    if (d <= 5) distance = 20;\n    else if (d <= 15) distance = 15;\n    else if (d <= 30) distance = 10;\n    else if (d <= 50) distance = 5;\n    else distance = 0;\n  }\n\n  // --- Price (max 15)\n  let price = 8;\n  const p = ev.price_min;\n  if (p != null) {\n    if (p <= 50) price = 15;\n    else if (p <= 100) price = 10;\n    else if (p <= 200) price = 5;\n    else price = 0;\n  }\n\n  // --- Venue fit (max 10)\n  const venueKey = (ev.venue_name || \"\").toLowerCase().trim();\n  const venue = VENUE_TIERS[venueKey] ?? VENUE_DEFAULT;\n\n  const total = recency + frequency + distance + price + venue;\n\n  return {\n    ...ev,\n    concert_score: total,\n    score_breakdown: {\n      recency,\n      frequency,\n      distance,\n      price,\n      venue,\n    },\n  };\n}\n\nconst events = $input.all().map(item => item.json);\nconst scored = events.map(scoreEvent);\nscored.sort((a, b) => b.concert_score - a.concert_score);\nreturn scored.map(s => ({ json: s }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3200,
+        1840
+      ],
+      "id": "92773eab-752e-4f1d-a1b4-f70dc8e4489d",
+      "name": "Score Concerts"
+    },
+    {
+      "parameters": {
+        "jsCode": "const THRESHOLD = 40;\n\n// De-dupe against Notion (the durable source of truth) instead of workflow\n// static data, which n8n Cloud wipes on re-save / version change.\n// NOTE: verify the property paths in getProp() against the actual\n// \"Get Notion Pages\" output and adjust if your node returns a different shape.\nfunction getProp(page, name) {\n  // n8n's Notion node flattens props as property_<snake_case_name>;\n  // dates come back as { start, end, time_zone }. Page id is at page.id.\n  const key = 'property_' + name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');\n  let v = page[key];\n  if (v === undefined) v = page[name];\n  if (v === undefined && page.properties) v = page.properties[name];\n  if (v == null) return undefined;\n  if (typeof v === 'object') {\n    if ('start' in v) return v.start;\n    if ('checkbox' in v) return v.checkbox;\n    if ('rich_text' in v) return (v.rich_text || []).map(t => t.plain_text || '').join('');\n    if ('number' in v) return v.number;\n    if ('name' in v) return v.name;\n    return v;\n  }\n  return v;\n}\n\nconst existingPages = $('Get Notion Pages').all().map(i => i.json);\nconst alertedIds = new Set();\nfor (const p of existingPages) {\n  const eid = getProp(p, 'Event ID');\n  if (eid && getProp(p, 'Alerted')) alertedIds.add(eid);\n}\n\nconst scored = $('Attach Previews').all().map(item => item.json);\nconst above = scored.filter(ev => ev.concert_score >= THRESHOLD);\nconst newEvents = above.filter(ev => !alertedIds.has(ev.event_id));\n\nif (newEvents.length === 0) {\n  return [{ json: { hasNew: false, count: 0, emailHtml: '' } }];\n}\nfunction formatDate(iso) {\n  if (!iso) return 'TBD';\n  const d = new Date(iso);\n  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/New_York' });\n}\nfunction calendarUrl(ev) {\n  const title = encodeURIComponent(ev.artist_name + ' at ' + (ev.venue_name || 'TBD'));\n  const loc = encodeURIComponent((ev.venue_name || '') + ', ' + (ev.venue_city || '') + ', ' + (ev.venue_state || ''));\n  const details = encodeURIComponent('Score: ' + ev.concert_score + ' — ' + (ev.ticket_url || ''));\n\n  let startStr, endStr;\n  if (ev.date) {\n    const d = new Date(ev.date);\n    const utcHour = d.getUTCHours();\n    const utcMin = d.getUTCMinutes();\n    const isMidnightish = (utcHour === 0 && utcMin < 30) || (utcHour === 23 && utcMin >= 30);\n\n    if (isMidnightish) {\n      const etDate = new Date(d.toLocaleString('en-US', { timeZone: 'America/New_York' }));\n      const yr = etDate.getFullYear();\n      const mo = String(etDate.getMonth() + 1).padStart(2, '0');\n      const dy = String(etDate.getDate()).padStart(2, '0');\n      startStr = `${yr}${mo}${dy}T200000`;\n      endStr   = `${yr}${mo}${dy}T230000`;\n    } else {\n      const fmt = (n) => String(n).padStart(2, '0');\n      const yr = d.getUTCFullYear();\n      const mo = fmt(d.getUTCMonth() + 1);\n      const dy = fmt(d.getUTCDate());\n      const hr = fmt(d.getUTCHours());\n      const mn = fmt(d.getUTCMinutes());\n      startStr = `${yr}${mo}${dy}T${hr}${mn}00Z`;\n      const endD = new Date(d.getTime() + 3 * 60 * 60 * 1000);\n      endStr = `${endD.getUTCFullYear()}${fmt(endD.getUTCMonth()+1)}${fmt(endD.getUTCDate())}T${fmt(endD.getUTCHours())}${fmt(endD.getUTCMinutes())}00Z`;\n    }\n  } else {\n    startStr = '20260101T200000';\n    endStr   = '20260101T230000';\n  }\n\n  return 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + title + '&dates=' + startStr + '/' + endStr + '&location=' + loc + '&details=' + details;\n}\nlet html = '<h2 style=\"font-family:sans-serif;color:#1a1a1a;\">🎵 Concert Alerts</h2>';\nhtml += '<p style=\"font-family:sans-serif;color:#555;\">' + newEvents.length + ' new concert' + (newEvents.length > 1 ? 's' : '') + ' matched your listening profile:</p>';\nfor (const ev of newEvents) {\n  const artistLine = ev.is_opener\n    ? ev.artist_name + ' <span style=\"color:#888;\">(opening for ' + ev.headliner_name + ')</span>'\n    : ev.artist_name;\n  const price = ev.price_min != null ? '$' + ev.price_min : 'TBD';\n  const dist = ev.distance_miles != null ? ev.distance_miles + ' mi' : 'TBD';\n  const sb = ev.score_breakdown;\n  html += '<div style=\"font-family:sans-serif;border:1px solid #e0e0e0;border-radius:8px;padding:16px;margin:12px 0;\">';\n  html += '<h3 style=\"margin:0 0 4px 0;\">' + artistLine + '</h3>';\n  html += '<p style=\"margin:4px 0;color:#333;\">' + (ev.venue_name || 'TBD') + ', ' + (ev.venue_city || '') + '</p>';\n  html += '<p style=\"margin:4px 0;color:#333;\">' + formatDate(ev.date) + ' &middot; ' + dist + ' &middot; ' + price + '</p>';\n  html += '<p style=\"margin:8px 0 4px 0;font-weight:bold;font-size:18px;color:#2d7d46;\">Score: ' + ev.concert_score + '</p>';\n  html += '<p style=\"margin:0;color:#888;font-size:13px;\">recency ' + sb.recency + ' &middot; frequency ' + sb.frequency + ' &middot; distance ' + sb.distance + ' &middot; price ' + sb.price + ' &middot; venue ' + sb.venue + '</p>';\n  if (ev.setlist_preview && ev.setlist_preview !== 'No preview available.') {\n    html += '<p style=\"margin:10px 0 0 0;color:#555;font-style:italic;font-size:14px;line-height:1.4;\">🎤 ' + ev.setlist_preview + '</p>';\n  }\n  html += '<p style=\"margin:12px 0 0 0;\">';\n  html += '<a href=\"' + (ev.ticket_url || '#') + '\" style=\"background:#2d7d46;color:#fff;padding:8px 16px;border-radius:4px;text-decoration:none;margin-right:8px;\">Get Tickets</a>';\n  html += '<a href=\"' + calendarUrl(ev) + '\" style=\"background:#4285f4;color:#fff;padding:8px 16px;border-radius:4px;text-decoration:none;\">Add to Calendar</a>';\n  html += '</p></div>';\n}\nreturn [{ json: { hasNew: true, count: newEvents.length, emailHtml: html, subject: '🎵 ' + newEvents.length + ' new concert alert' + (newEvents.length > 1 ? 's' : '') } }];\n"
+      },
+      "id": "627f64f5-c47e-4027-b24e-313d5a9352e3",
+      "name": "Filter & De-dupe",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4768,
+        1552
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "2724cbeb-a99a-40b4-becf-64e676874150",
+              "leftValue": "={{ $json.hasNew }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f6fc5c7b-7493-44a9-baad-0d2143bbde57",
+      "name": "Has New Alerts?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4992,
+        1552
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "hire.reid.collins@gmail.com",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.emailHtml }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "da590c52-789d-450e-89a2-6bd46d34fa56",
+      "name": "Send Alert Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        5216,
+        1552
+      ],
+      "webhookId": "eacc0e6a-76f2-45ec-8d46-dd0d0d12eb50",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "UOoO7YKHTG3pHNUU",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const CAL_THRESHOLD = 60;\n\n// De-dupe against Notion's \"On Calendar\" flag (durable source of truth)\n// rather than workflow static data. See getProp note in Filter & De-dupe.\nfunction getProp(page, name) {\n  // n8n's Notion node flattens props as property_<snake_case_name>;\n  // dates come back as { start, end, time_zone }. Page id is at page.id.\n  const key = 'property_' + name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');\n  let v = page[key];\n  if (v === undefined) v = page[name];\n  if (v === undefined && page.properties) v = page.properties[name];\n  if (v == null) return undefined;\n  if (typeof v === 'object') {\n    if ('start' in v) return v.start;\n    if ('checkbox' in v) return v.checkbox;\n    if ('rich_text' in v) return (v.rich_text || []).map(t => t.plain_text || '').join('');\n    if ('number' in v) return v.number;\n    if ('name' in v) return v.name;\n    return v;\n  }\n  return v;\n}\n\nconst existingPages = $('Get Notion Pages').all().map(i => i.json);\nconst calendaredIds = new Set();\nfor (const p of existingPages) {\n  const eid = getProp(p, 'Event ID');\n  if (eid && getProp(p, 'On Calendar')) calendaredIds.add(eid);\n}\n\nconst scored = $('Attach Previews').all().map(item => item.json);\nconst above = scored.filter(ev => ev.concert_score >= CAL_THRESHOLD);\nconst newEvents = above.filter(ev => !calendaredIds.has(ev.event_id));\n\nif (newEvents.length === 0) {\n  return [];\n}\n\nfunction shortDate(ymd) {\n  if (!ymd) return '';\n  const parts = String(ymd).slice(0, 10).split('-').map(Number);\n  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];\n  if (parts.length < 3 || !months[parts[1] - 1]) return '';\n  return months[parts[1] - 1] + ' ' + parts[2] + ', ' + parts[0];\n}\nconst results = newEvents.map(ev => {\n  let startDt, endDt;\n  const raw = ev.date || '';\n  const d = new Date(raw);\n\n  if (raw.includes('T00:00:00') || raw.includes('T00:00:00Z')) {\n    const utcDate = new Date(raw);\n    utcDate.setDate(utcDate.getDate() - 1);\n    const dateStr = utcDate.toISOString().slice(0, 10);\n    startDt = dateStr + 'T20:00:00';\n    endDt = dateStr + 'T23:00:00';\n  } else if (!isNaN(d.getTime())) {\n    startDt = d.toISOString().slice(0, 19);\n    const end = new Date(d.getTime() + 3 * 60 * 60 * 1000);\n    endDt = end.toISOString().slice(0, 19);\n  } else {\n    startDt = raw.slice(0, 10) + 'T20:00:00';\n    endDt = raw.slice(0, 10) + 'T23:00:00';\n  }\n\n  const baseTitle = ev.is_opener\n    ? `${ev.artist_name} (opening for ${ev.headliner_name}) at ${ev.venue_name || 'TBD'}`\n    : `${ev.artist_name} at ${ev.venue_name || 'TBD'}`;\n  const dateLabel = shortDate(startDt);\n  const title = dateLabel ? `${baseTitle} — ${dateLabel}` : baseTitle;\n\n  const location = [ev.venue_name, ev.venue_city, ev.venue_state].filter(Boolean).join(', ');\n  const price = ev.price_min != null ? `$${ev.price_min}` : 'TBD';\n  const dist = ev.distance_miles != null ? `${ev.distance_miles} mi` : 'TBD';\n  const sb = ev.score_breakdown;\n\n  const description = [\n    `🎵 Concert Score: ${ev.concert_score}/100`,\n    `recency ${sb.recency} · frequency ${sb.frequency} · distance ${sb.distance} · price ${sb.price} · venue ${sb.venue}`,\n    '',\n    `🎫 Tickets: ${ev.ticket_url || 'TBD'}`,\n    `💰 Price: ${price}`,\n    `📍 Distance: ${dist} from home`,\n    ''\n  ];\n\n  if (ev.setlist_preview && ev.setlist_preview !== 'No preview available.') {\n    description.push('🎤 What to expect:', ev.setlist_preview, '');\n  }\n\n  description.push('Added automatically by Concert Intelligence Agent');\n\n  return {\n    json: {\n      title,\n      location,\n      startDt,\n      endDt,\n      description: description.join('\\n'),\n      timeZone: 'America/New_York',\n      event_id: ev.event_id\n    }\n  };\n});\n\nreturn results;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4768,
+        1744
+      ],
+      "id": "c0f688fb-0734-4b98-8a73-cc9d5da17486",
+      "name": "Calendar Prep"
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "value": "hire.reid.collins@gmail.com",
+          "mode": "list",
+          "cachedResultName": "hire.reid.collins@gmail.com"
+        },
+        "start": "={{ $json.startDt }}",
+        "end": "={{ $json.endDt }}",
+        "additionalFields": {
+          "description": "={{ $json.description }}",
+          "location": "={{ $json.location }}",
+          "summary": "={{ $json.title }}"
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        4992,
+        1744
+      ],
+      "id": "335fcec8-9c61-4582-af61-4d5c8d461002",
+      "name": "Create an event",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "cmJW8DbFvCetfy1b",
+          "name": "Google Calendar OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build create-vs-update routing using existing Notion pages as source of truth.\n// Every matched event is emitted: brand-new ones are created, already-tracked\n// ones are updated (keeps Score / Alerted / On Calendar current run to run).\n// NOTE: verify getProp() paths against the real \"Get Notion Pages\" output.\nfunction getProp(page, name) {\n  // n8n's Notion node flattens props as property_<snake_case_name>;\n  // dates come back as { start, end, time_zone }. Page id is at page.id.\n  const key = 'property_' + name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');\n  let v = page[key];\n  if (v === undefined) v = page[name];\n  if (v === undefined && page.properties) v = page.properties[name];\n  if (v == null) return undefined;\n  if (typeof v === 'object') {\n    if ('start' in v) return v.start;\n    if ('checkbox' in v) return v.checkbox;\n    if ('rich_text' in v) return (v.rich_text || []).map(t => t.plain_text || '').join('');\n    if ('number' in v) return v.number;\n    if ('name' in v) return v.name;\n    return v;\n  }\n  return v;\n}\n\nconst existingPages = $('Get Notion Pages').all().map(i => i.json);\nconst byEventId = {};\nfor (const p of existingPages) {\n  const eid = getProp(p, 'Event ID');\n  if (!eid) continue;\n  byEventId[eid] = { pageId: p.id, discovered: getProp(p, 'Discovered') };\n}\n\nconst scored = $('Attach Previews').all().map(item => item.json);\n\nfunction fixDate(raw) {\n  if (!raw) return null;\n  if (raw.includes('T00:00:00') || raw.includes('T00:00:00Z')) {\n    const utcDate = new Date(raw);\n    utcDate.setDate(utcDate.getDate() - 1);\n    return utcDate.toISOString().slice(0, 10);\n  }\n  return raw.slice(0, 10);\n}\n\nfunction shortDate(ymd) {\n  if (!ymd) return '';\n  const parts = String(ymd).slice(0, 10).split('-').map(Number);\n  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];\n  if (parts.length < 3 || !months[parts[1] - 1]) return '';\n  return months[parts[1] - 1] + ' ' + parts[2] + ', ' + parts[0];\n}\nconst results = scored.map(ev => {\n  const baseTitle = ev.is_opener\n    ? `${ev.artist_name} (opening for ${ev.headliner_name}) at ${ev.venue_name || 'TBD'}`\n    : `${ev.artist_name} at ${ev.venue_name || 'TBD'}`;\n  const dateLabel = shortDate(fixDate(ev.date));\n  const title = dateLabel ? `${baseTitle} — ${dateLabel}` : baseTitle;\n\n  const sb = ev.score_breakdown;\n  const breakdown = `recency ${sb.recency} · freq ${sb.frequency} · dist ${sb.distance} · price ${sb.price} · venue ${sb.venue}`;\n  const city = [ev.venue_city, ev.venue_state].filter(Boolean).join(', ');\n  const today = new Date().toISOString().slice(0, 10);\n  const preview = (ev.setlist_preview && ev.setlist_preview !== 'No preview available.') ? ev.setlist_preview : '';\n\n  const existing = byEventId[ev.event_id];\n\n  return {\n    json: {\n      operation: existing ? 'update' : 'create',\n      pageId: existing ? existing.pageId : '',\n      concert: title,\n      date: fixDate(ev.date),\n      score: ev.concert_score,\n      artist: ev.artist_name,\n      venue: ev.venue_name || '',\n      city,\n      distance: ev.distance_miles,\n      price: ev.price_min,\n      breakdown,\n      openerFor: ev.is_opener ? ev.headliner_name : '',\n      tickets: ev.ticket_url || '',\n      alerted: ev.concert_score >= 40,\n      onCalendar: ev.concert_score >= 60,\n      eventId: ev.event_id,\n      discovered: (existing && existing.discovered) ? String(existing.discovered).slice(0, 10) : today,\n      preview\n    }\n  };\n});\n\nreturn results;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4768,
+        1936
+      ],
+      "id": "a85412ed-f2ff-4535-8972-b55837d38888",
+      "name": "Notion Prep"
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "databaseId": {
+          "__rl": true,
+          "value": "a8fa3036-8a5b-4e6d-8e9b-cde5f572901a",
+          "mode": "list",
+          "cachedResultName": "Concert Tracker",
+          "cachedResultUrl": "https://www.notion.so/a8fa30368a5b4e6d8e9bcde5f572901a"
+        },
+        "title": "={{ $json.concert }}",
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Concert|title",
+              "title": "={{ $json.concert }}"
+            },
+            {
+              "key": "Score|number",
+              "numberValue": "={{ $json.score }}"
+            },
+            {
+              "key": "Status|select",
+              "selectValue": "=Discovered"
+            },
+            {
+              "key": "Artist|rich_text",
+              "textContent": "={{ $json.artist }}"
+            },
+            {
+              "key": "Venue|rich_text",
+              "textContent": "={{ $json.venue }}"
+            },
+            {
+              "key": "City|rich_text",
+              "textContent": "={{ $json.city }}"
+            },
+            {
+              "key": "Distance|number",
+              "numberValue": "={{ $json.distance }}"
+            },
+            {
+              "key": "Price|number",
+              "numberValue": "={{ $json.price }}"
+            },
+            {
+              "key": "Breakdown|rich_text",
+              "textContent": "={{ $json.breakdown }}"
+            },
+            {
+              "key": "Opener For|rich_text",
+              "textContent": "={{ $json.openerFor }}"
+            },
+            {
+              "key": "Tickets|url",
+              "urlValue": "={{ $json.tickets }}"
+            },
+            {
+              "key": "Event ID|rich_text",
+              "textContent": "={{ $json.eventId }}"
+            },
+            {
+              "key": "Alerted|checkbox",
+              "checkboxValue": "={{ $json.alerted }}"
+            },
+            {
+              "key": "On Calendar|checkbox",
+              "checkboxValue": "={{ $json.onCalendar }}"
+            },
+            {
+              "key": "Date|date",
+              "includeTime": false,
+              "date": "={{ $json.date }}"
+            },
+            {
+              "key": "Discovered|date",
+              "includeTime": false,
+              "date": "={{ $json.discovered }}"
+            },
+            {
+              "key": "Preview|rich_text",
+              "textContent": "={{ $json.preview }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        5216,
+        1840
+      ],
+      "id": "2bf4e938-ad56-47cb-985b-dc9c32f07616",
+      "name": "Create a database page",
+      "credentials": {
+        "notionApi": {
+          "id": "5Y1pjUrEsph9KIVc",
+          "name": "Notion account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const CACHE_TTL_DAYS = 30;\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.setlistPreviews) staticData.setlistPreviews = {};\n\nconst events = $input.all().map(item => item.json);\nstaticData._scoredEvents = events; // stash for the end\n\nfunction isCacheFresh(entry) {\n  if (!entry || !entry.generatedAt) return false;\n  const age = (Date.now() - new Date(entry.generatedAt).getTime()) / (1000 * 60 * 60 * 24);\n  return age < CACHE_TTL_DAYS;\n}\n\n// Unique artists that need a fresh preview\nconst seen = {};\nconst artists = [];\nfor (const ev of events) {\n  if (seen[ev.artist_id]) continue;\n  seen[ev.artist_id] = true;\n\n  if (isCacheFresh(staticData.setlistPreviews[ev.artist_id])) continue; // skip cached\n\n  artists.push({\n    json: {\n      artist_id: ev.artist_id,\n      artist_name: ev.artist_name,\n      is_opener: ev.is_opener,\n      headliner_name: ev.headliner_name\n    }\n  });\n}\n\nreturn artists;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3424,
+        1840
+      ],
+      "id": "301f78ca-679e-4216-ad83-7b6ae96bbeb4",
+      "name": "Setlist Prep",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "url": "=https://api.setlist.fm/rest/1.0/search/setlists?artistName={{ encodeURIComponent($json.artist_name) }}&p=1",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "x-api-key",
+              "value": "={{ $vars.SETLIST_FM_API_KEY }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        3648,
+        1840
+      ],
+      "id": "16b65ef5-00a8-40f5-94a6-fd87adc6407c",
+      "name": "Setlist.fm Request",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Run Once for Each Item mode\nconst sfData = $json; // the Setlist.fm response for THIS artist\nconst artist = $('Setlist Prep').all()[$itemIndex].json;\n\nconst setlists = (sfData.setlist || []).slice(0, 5);\n\nlet prompt;\nif (setlists.length === 0) {\n  prompt = `Write exactly this sentence and nothing else: \"No recent setlist data available for ${artist.artist_name}.\"`;\n} else {\n  const formatted = setlists.map((sl, i) => {\n    const date = sl.eventDate || 'unknown date';\n    const venue = sl.venue?.name || 'unknown venue';\n    const sets = sl.sets?.set || [];\n    const songs = sets.map(s => {\n      const setName = s.name || (s.encore ? 'Encore' : 'Main Set');\n      return `  ${setName}: ${(s.song || []).map(x => x.name).filter(Boolean).join(', ')}`;\n    }).join('\\n');\n    return `Show ${i + 1} (${date}, ${venue}):\\n${songs}`;\n  }).join('\\n\\n');\n\n  const openerNote = artist.is_opener\n    ? `\\nNote: this artist is opening for ${artist.headliner_name}, so expect a shorter set (30-45 min).`\n    : '';\n\n  prompt = `You are a concert preview writer. Given these recent setlists for ${artist.artist_name}, write a 2-3 sentence preview of what to expect at their upcoming show. Focus on set length, key songs, and notable production. Be specific about song names. Concise and enthusiastic, like a knowledgeable friend. Output ONLY the preview itself with no preamble — start directly with the description.${openerNote}\\n\\nRecent setlists:\\n${formatted}`;\n}\n\nreturn { json: { artist_id: artist.artist_id, artist_name: artist.artist_name, prompt } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3872,
+        1840
+      ],
+      "id": "622f7427-1ae5-4c51-b573-14e1b5a681db",
+      "name": "Build Prompt"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-api-key",
+              "value": "={{ $vars.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: \"claude-sonnet-4-6\", max_tokens: 300, messages: [{ role: \"user\", content: $json.prompt }] }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        4096,
+        1840
+      ],
+      "id": "182d98ff-c72e-4332-a3db-7c84acba21b6",
+      "name": "Claude Request",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst prompts = $('Build Prompt').all();\nconst claudeOut = $input.all();\n\nfor (let i = 0; i < prompts.length; i++) {\n  const aid = prompts[i].json.artist_id;\n  const text = claudeOut[i]?.json?.content?.[0]?.text || 'No preview available.';\n  staticData.setlistPreviews[aid] = { preview: text, generatedAt: new Date().toISOString() };\n}\n\nconst events = $('Score Concerts').all().map(item => item.json);\nconst enriched = events.map(ev => ({\n  json: {\n    ...ev,\n    setlist_preview: staticData.setlistPreviews[ev.artist_id]?.preview || 'No preview available.'\n  }\n}));\n\nreturn enriched;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4320,
+        1840
+      ],
+      "id": "66269306-50e6-4d69-ba65-c77989dd0954",
+      "name": "Attach Previews"
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "value": "a8fa3036-8a5b-4e6d-8e9b-cde5f572901a",
+          "mode": "list",
+          "cachedResultName": "Concert Tracker",
+          "cachedResultUrl": "https://www.notion.so/a8fa30368a5b4e6d8e9bcde5f572901a"
+        },
+        "returnAll": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        4544,
+        1840
+      ],
+      "id": "0f085a75-a8af-4fca-ad9f-788e7bb86d49",
+      "name": "Get Notion Pages",
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "notionApi": {
+          "id": "5Y1pjUrEsph9KIVc",
+          "name": "Notion account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "update",
+        "pageId": {
+          "__rl": true,
+          "value": "={{ $json.pageId }}",
+          "mode": "id"
+        },
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Concert|title",
+              "title": "={{ $json.concert }}"
+            },
+            {
+              "key": "Score|number",
+              "numberValue": "={{ $json.score }}"
+            },
+            {
+              "key": "Artist|rich_text",
+              "textContent": "={{ $json.artist }}"
+            },
+            {
+              "key": "Venue|rich_text",
+              "textContent": "={{ $json.venue }}"
+            },
+            {
+              "key": "City|rich_text",
+              "textContent": "={{ $json.city }}"
+            },
+            {
+              "key": "Distance|number",
+              "numberValue": "={{ $json.distance }}"
+            },
+            {
+              "key": "Price|number",
+              "numberValue": "={{ $json.price }}"
+            },
+            {
+              "key": "Breakdown|rich_text",
+              "textContent": "={{ $json.breakdown }}"
+            },
+            {
+              "key": "Opener For|rich_text",
+              "textContent": "={{ $json.openerFor }}"
+            },
+            {
+              "key": "Tickets|url",
+              "urlValue": "={{ $json.tickets }}"
+            },
+            {
+              "key": "Event ID|rich_text",
+              "textContent": "={{ $json.eventId }}"
+            },
+            {
+              "key": "Alerted|checkbox",
+              "checkboxValue": "={{ $json.alerted }}"
+            },
+            {
+              "key": "On Calendar|checkbox",
+              "checkboxValue": "={{ $json.onCalendar }}"
+            },
+            {
+              "key": "Date|date",
+              "includeTime": false,
+              "date": "={{ $json.date }}"
+            },
+            {
+              "key": "Discovered|date",
+              "includeTime": false,
+              "date": "={{ $json.discovered }}"
+            },
+            {
+              "key": "Preview|rich_text",
+              "textContent": "={{ $json.preview }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        5216,
+        2032
+      ],
+      "id": "1b6e4c1d-13ae-4e8b-8a35-db186e25fb95",
+      "name": "Update a database page",
+      "credentials": {
+        "notionApi": {
+          "id": "5Y1pjUrEsph9KIVc",
+          "name": "Notion account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "b1f00003-0000-4000-8000-000000000003",
+              "leftValue": "={{ $json.operation }}",
+              "rightValue": "create",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4992,
+        1936
+      ],
+      "id": "733cbf11-dafc-4619-b7a4-b682cf8f0b8a",
+      "name": "Route Create vs Update"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get the recently played tracks",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fave Artist Long Term",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fave Artist Medium Term",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fave Artist Short Term",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "TicketMaster Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get the recently played tracks": {
+      "main": [
+        [
+          {
+            "node": "Merge Spotify Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fave Artist Medium Term": {
+      "main": [
+        [
+          {
+            "node": "Merge Spotify Data",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Fave Artist Long Term": {
+      "main": [
+        [
+          {
+            "node": "Merge Spotify Data",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Fave Artist Short Term": {
+      "main": [
+        [
+          {
+            "node": "Merge Spotify Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Request Bandsintown Evens",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Request Bandsintown Evens": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Spotify Data": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TicketMaster Request": {
+      "main": [
+        [
+          {
+            "node": "Match Concerts to Artists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Match Concerts to Artists": {
+      "main": [
+        [
+          {
+            "node": "Score Concerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Score Concerts": {
+      "main": [
+        [
+          {
+            "node": "Setlist Prep",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter & De-dupe": {
+      "main": [
+        [
+          {
+            "node": "Has New Alerts?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has New Alerts?": {
+      "main": [
+        [
+          {
+            "node": "Send Alert Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calendar Prep": {
+      "main": [
+        [
+          {
+            "node": "Create an event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notion Prep": {
+      "main": [
+        [
+          {
+            "node": "Route Create vs Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Setlist Prep": {
+      "main": [
+        [
+          {
+            "node": "Setlist.fm Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Setlist.fm Request": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "Claude Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Request": {
+      "main": [
+        [
+          {
+            "node": "Attach Previews",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attach Previews": {
+      "main": [
+        [
+          {
+            "node": "Get Notion Pages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Notion Pages": {
+      "main": [
+        [
+          {
+            "node": "Filter & De-dupe",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Calendar Prep",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notion Prep",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Create vs Update": {
+      "main": [
+        [
+          {
+            "node": "Create a database page",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update a database page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false,
+    "executionTimeout": -1
+  },
+  "versionId": "e929e620-5608-4940-bc4e-56925f339e98",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "e76c71c99645109aec7e39fa4c33cdf40c88a2bf41ffac722edec50922f704ca"
+  },
+  "id": "WmWnLoreicyMTUMK",
+  "tags": []
+}

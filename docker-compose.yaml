@@ -1,0 +1,25 @@
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: concert-intelligence-n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - GENERIC_TIMEZONE=America/New_York
+      - TZ=America/New_York
+      - N8N_SECURE_COOKIE=false
+      # API keys — set these in .env and they'll be available as n8n Variables
+      # Go to Settings > Variables in the n8n UI and add:
+      #   TICKETMASTER_API_KEY, SETLIST_FM_API_KEY, ANTHROPIC_API_KEY
+      - TICKETMASTER_API_KEY=${TICKETMASTER_API_KEY}
+      - SETLIST_FM_API_KEY=${SETLIST_FM_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./workflows:/home/node/workflows:ro
+    env_file:
+      - .env
+
+volumes:
+  n8n_data:

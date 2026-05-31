@@ -1,0 +1,22 @@
+# n8n
+.n8n/
+n8n-data/
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# Docker
+docker-compose.override.yaml
+
+# macOS
+.DS_Store
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
