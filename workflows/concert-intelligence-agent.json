@@ -14,10 +14,10 @@
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.3,
       "position": [
-        2528,
-        1344
+        5664,
+        2800
       ],
-      "id": "0ced61e2-ec1e-4cdf-93e8-3bf8d756d6af",
+      "id": "31dd2643-c123-4d49-aefb-a62699bda138",
       "name": "Schedule Trigger"
     },
     {
@@ -27,10 +27,10 @@
       "type": "n8n-nodes-base.spotify",
       "typeVersion": 1,
       "position": [
-        2752,
-        1072
+        5888,
+        2528
       ],
-      "id": "0b43e69b-e5f8-4436-a956-11971f0aee62",
+      "id": "8b5f4598-f96f-42ab-b78e-729b830a745a",
       "name": "Get the recently played tracks",
       "credentials": {
         "spotifyOAuth2Api": {
@@ -49,10 +49,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        2752,
-        1264
+        5888,
+        2720
       ],
-      "id": "e350baf6-1b70-4903-8346-947dbbd533b9",
+      "id": "302279c5-abbb-48c2-bc3c-157a2f865c4b",
       "name": "Fave Artist Short Term",
       "credentials": {
         "spotifyOAuth2Api": {
@@ -75,10 +75,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        2752,
-        1456
+        5888,
+        2912
       ],
-      "id": "186ce470-c28a-4491-8a6e-9d6ee768d031",
+      "id": "7eda31a4-21ef-4428-bb1f-fc6ea0477f00",
       "name": "Fave Artist Medium Term",
       "credentials": {
         "spotifyOAuth2Api": {
@@ -101,10 +101,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        2752,
-        1648
+        5888,
+        3104
       ],
-      "id": "63264360-aa27-42b3-b9ed-8ff3d0aa851f",
+      "id": "4aa80427-6ba2-4db4-8209-a583cc42efa6",
       "name": "Fave Artist Long Term",
       "credentials": {
         "spotifyOAuth2Api": {
@@ -124,11 +124,11 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3200,
-        1344
+        6336,
+        2800
       ],
-      "id": "7faeced0-5390-4e7d-8bd1-1b45eaf24a67",
-      "name": "Code in JavaScript"
+      "id": "2851cf0b-3b1a-46fb-9a9d-8e914ad40516",
+      "name": "Build Artist Profile"
     },
     {
       "parameters": {
@@ -175,10 +175,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        2752,
-        1840
+        5888,
+        3296
       ],
-      "id": "a8d8b89b-0bb8-4e22-9c29-653c91380153",
+      "id": "b61f3391-e93d-480c-84c0-d2814fd8cd03",
       "name": "TicketMaster Request"
     },
     {
@@ -188,10 +188,10 @@
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
       "position": [
-        3424,
-        1344
+        6560,
+        2800
       ],
-      "id": "d239a49f-7a78-470e-81b0-ea9f36a9e3ce",
+      "id": "1bd07296-f5fc-4d98-8247-c0264c1f16c9",
       "name": "Loop Over Items",
       "disabled": true
     },
@@ -202,10 +202,10 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        3872,
-        1344
+        7008,
+        2800
       ],
-      "id": "d6b01450-d448-4140-9914-0cdc202325c5",
+      "id": "4f7403d9-f821-42f0-b2b1-96e6af4d9558",
       "name": "Wait",
       "webhookId": "8d90e9d5-3743-43c5-91ac-d828f2afa87d",
       "disabled": true
@@ -231,10 +231,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        3648,
-        1272
+        6784,
+        2736
       ],
-      "id": "7a91dbb2-4578-41a1-8f1e-0359c7ecf83a",
+      "id": "8f4224ff-3007-4374-a3cb-3693042a42d5",
       "name": "Request Bandsintown Evens",
       "disabled": true
     },
@@ -245,23 +245,23 @@
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3.2,
       "position": [
-        2976,
-        1312
+        6112,
+        2768
       ],
-      "id": "6eae14d9-7564-4420-be12-b04d4fbcab71",
+      "id": "6aa54a4f-1557-4f20-b8ee-20b66689b88e",
       "name": "Merge Spotify Data"
     },
     {
       "parameters": {
-        "jsCode": "// Get the Spotify artist profile from the upstream Code node\nconst artists = $('Code in JavaScript').all().map(item => item.json);\n\n// Get the Ticketmaster response\nconst tmResponse = $input.first().json;\nconst events = tmResponse._embedded?.events || [];\n\n// User location (Downtown Brooklyn) for haversine distance\nconst USER_LAT = 40.6928;\nconst USER_LNG = -73.9903;\n\nfunction haversineMiles(lat1, lng1, lat2, lng2) {\n  const R = 3958.8;\n  const toRad = d => d * Math.PI / 180;\n  const dLat = toRad(lat2 - lat1);\n  const dLng = toRad(lng2 - lng1);\n  const a = Math.sin(dLat / 2) ** 2\n          + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;\n  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));\n}\n\nfunction normalizeName(name) {\n  return name\n    .toLowerCase()\n    .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')\n    .replace(/\\s*[\\(\\[].*?[\\)\\]]\\s*/g, '')\n    .replace(/\\bfeat\\.?\\b.*$/i, '')\n    .replace(/\\bft\\.?\\b.*$/i, '')\n    .trim();\n}\n\nfunction levenshtein(a, b) {\n  if (a === b) return 0;\n  if (!a.length) return b.length;\n  if (!b.length) return a.length;\n  const dp = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));\n  for (let i = 0; i <= a.length; i++) dp[i][0] = i;\n  for (let j = 0; j <= b.length; j++) dp[0][j] = j;\n  for (let i = 1; i <= a.length; i++) {\n    for (let j = 1; j <= b.length; j++) {\n      dp[i][j] = a[i - 1] === b[j - 1]\n        ? dp[i - 1][j - 1]\n        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);\n    }\n  }\n  return dp[a.length][b.length];\n}\n\nconst artistByNormalized = {};\nfor (const a of artists) {\n  artistByNormalized[a.name_normalized] = a;\n}\n\nfunction findMatch(eventArtistName) {\n  const normalized = normalizeName(eventArtistName);\n  if (artistByNormalized[normalized]) return artistByNormalized[normalized];\n  for (const a of artists) {\n    const dist = levenshtein(normalized, a.name_normalized);\n    const maxLen = Math.max(normalized.length, a.name_normalized.length);\n    if (dist <= 2 && dist / maxLen < 0.3) return a;\n  }\n  return null;\n}\n\nconst matched = [];\nfor (const ev of events) {\n  const attractions = ev._embedded?.attractions || [];\n  if (attractions.length === 0) continue;\n\n  let matchedArtist = null;\n  let matchedAttraction = null;\n  for (const att of attractions) {\n    const m = findMatch(att.name);\n    if (m) { matchedArtist = m; matchedAttraction = att; break; }\n  }\n  if (!matchedArtist) continue;\n\n  const headlinerName = attractions[0]?.name || null;\n  const isOpener = matchedAttraction.name !== headlinerName;\n\n  const venue = ev._embedded?.venues?.[0] || {};\n  const venueLat = parseFloat(venue.location?.latitude);\n  const venueLng = parseFloat(venue.location?.longitude);\n  const distance = (venueLat && venueLng)\n    ? Math.round(haversineMiles(USER_LAT, USER_LNG, venueLat, venueLng) * 10) / 10\n    : null;\n\n  const priceRanges = ev.priceRanges || [];\n  const priceMin = priceRanges[0]?.min ?? null;\n  const priceMax = priceRanges[0]?.max ?? null;\n\n  matched.push({\n    event_id: `tm:${ev.id}`,\n    source: 'ticketmaster',\n    artist_id: matchedArtist.id,\n    artist_name: matchedArtist.name,\n    artist_name_matched: matchedAttraction.name,\n    headliner_name: headlinerName,\n    is_opener: isOpener,\n    date: ev.dates?.start?.dateTime || ev.dates?.start?.localDate || null,\n    venue_name: venue.name || null,\n    venue_city: venue.city?.name || null,\n    venue_state: venue.state?.stateCode || null,\n    venue_lat: venueLat || null,\n    venue_lng: venueLng || null,\n    distance_miles: distance,\n    ticket_url: ev.url || null,\n    price_min: priceMin,\n    price_max: priceMax,\n    on_sale: ev.dates?.status?.code === 'onsale',\n    days_since_played: matchedArtist.days_since_played,\n    short_term_rank: matchedArtist.short_term_rank,\n    medium_term_rank: matchedArtist.medium_term_rank,\n    long_term_rank: matchedArtist.long_term_rank,\n    recent_play_count: matchedArtist.recent_play_count,\n  });\n}\n\nreturn matched.map(m => ({ json: m }));"
+        "jsCode": "// Get the Spotify artist profile from the Build Artist Profile node\nconst artists = $('Build Artist Profile').all().map(item => item.json);\n\n// Get the Ticketmaster response\nconst tmResponse = $input.first().json;\nconst events = tmResponse._embedded?.events || [];\n\n// User location (Downtown Brooklyn) for haversine distance\nconst USER_LAT = 40.6928;\nconst USER_LNG = -73.9903;\n\nfunction haversineMiles(lat1, lng1, lat2, lng2) {\n  const R = 3958.8;\n  const toRad = d => d * Math.PI / 180;\n  const dLat = toRad(lat2 - lat1);\n  const dLng = toRad(lng2 - lng1);\n  const a = Math.sin(dLat / 2) ** 2\n          + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;\n  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));\n}\n\nfunction normalizeName(name) {\n  return name\n    .toLowerCase()\n    .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')\n    .replace(/\\s*[\\(\\[].*?[\\)\\]]\\s*/g, '')\n    .replace(/\\bfeat\\.?\\b.*$/i, '')\n    .replace(/\\bft\\.?\\b.*$/i, '')\n    .trim();\n}\n\nfunction levenshtein(a, b) {\n  if (a === b) return 0;\n  if (!a.length) return b.length;\n  if (!b.length) return a.length;\n  const dp = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));\n  for (let i = 0; i <= a.length; i++) dp[i][0] = i;\n  for (let j = 0; j <= b.length; j++) dp[0][j] = j;\n  for (let i = 1; i <= a.length; i++) {\n    for (let j = 1; j <= b.length; j++) {\n      dp[i][j] = a[i - 1] === b[j - 1]\n        ? dp[i - 1][j - 1]\n        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);\n    }\n  }\n  return dp[a.length][b.length];\n}\n\nconst artistByNormalized = {};\nfor (const a of artists) {\n  artistByNormalized[a.name_normalized] = a;\n}\n\nfunction findMatch(eventArtistName) {\n  const normalized = normalizeName(eventArtistName);\n  if (artistByNormalized[normalized]) return artistByNormalized[normalized];\n  for (const a of artists) {\n    const dist = levenshtein(normalized, a.name_normalized);\n    const maxLen = Math.max(normalized.length, a.name_normalized.length);\n    if (dist <= 2 && dist / maxLen < 0.3) return a;\n  }\n  return null;\n}\n\nconst matched = [];\nfor (const ev of events) {\n  const attractions = ev._embedded?.attractions || [];\n  if (attractions.length === 0) continue;\n\n  let matchedArtist = null;\n  let matchedAttraction = null;\n  for (const att of attractions) {\n    const m = findMatch(att.name);\n    if (m) { matchedArtist = m; matchedAttraction = att; break; }\n  }\n  if (!matchedArtist) continue;\n\n  const headlinerName = attractions[0]?.name || null;\n  const isOpener = matchedAttraction.name !== headlinerName;\n\n  const venue = ev._embedded?.venues?.[0] || {};\n  const venueLat = parseFloat(venue.location?.latitude);\n  const venueLng = parseFloat(venue.location?.longitude);\n  const distance = (venueLat && venueLng)\n    ? Math.round(haversineMiles(USER_LAT, USER_LNG, venueLat, venueLng) * 10) / 10\n    : null;\n\n  const priceRanges = ev.priceRanges || [];\n  const priceMin = priceRanges[0]?.min ?? null;\n  const priceMax = priceRanges[0]?.max ?? null;\n\n  matched.push({\n    event_id: `tm:${ev.id}`,\n    source: 'ticketmaster',\n    artist_id: matchedArtist.id,\n    artist_name: matchedArtist.name,\n    artist_name_matched: matchedAttraction.name,\n    headliner_name: headlinerName,\n    is_opener: isOpener,\n    date: ev.dates?.start?.dateTime || ev.dates?.start?.localDate || null,\n    venue_name: venue.name || null,\n    venue_city: venue.city?.name || null,\n    venue_state: venue.state?.stateCode || null,\n    venue_lat: venueLat || null,\n    venue_lng: venueLng || null,\n    distance_miles: distance,\n    ticket_url: ev.url || null,\n    price_min: priceMin,\n    price_max: priceMax,\n    on_sale: ev.dates?.status?.code === 'onsale',\n    days_since_played: matchedArtist.days_since_played,\n    short_term_rank: matchedArtist.short_term_rank,\n    medium_term_rank: matchedArtist.medium_term_rank,\n    long_term_rank: matchedArtist.long_term_rank,\n    recent_play_count: matchedArtist.recent_play_count,\n  });\n}\n\nreturn matched.map(m => ({ json: m }));"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2976,
-        1840
+        6112,
+        3296
       ],
-      "id": "b122c7d1-b320-4876-947b-efd9b510d49a",
+      "id": "7f6434a7-8989-4d93-95c3-03f86ed1619d",
       "name": "Match Concerts to Artists"
     },
     {
@@ -271,23 +271,23 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3200,
-        1840
+        6336,
+        3296
       ],
-      "id": "92773eab-752e-4f1d-a1b4-f70dc8e4489d",
+      "id": "82253101-db4a-4909-a181-f2bfa3eff291",
       "name": "Score Concerts"
     },
     {
       "parameters": {
         "jsCode": "const THRESHOLD = 40;\n\n// De-dupe against Notion (the durable source of truth) instead of workflow\n// static data, which n8n Cloud wipes on re-save / version change.\n// NOTE: verify the property paths in getProp() against the actual\n// \"Get Notion Pages\" output and adjust if your node returns a different shape.\nfunction getProp(page, name) {\n  // n8n's Notion node flattens props as property_<snake_case_name>;\n  // dates come back as { start, end, time_zone }. Page id is at page.id.\n  const key = 'property_' + name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');\n  let v = page[key];\n  if (v === undefined) v = page[name];\n  if (v === undefined && page.properties) v = page.properties[name];\n  if (v == null) return undefined;\n  if (typeof v === 'object') {\n    if ('start' in v) return v.start;\n    if ('checkbox' in v) return v.checkbox;\n    if ('rich_text' in v) return (v.rich_text || []).map(t => t.plain_text || '').join('');\n    if ('number' in v) return v.number;\n    if ('name' in v) return v.name;\n    return v;\n  }\n  return v;\n}\n\nconst existingPages = $('Get Notion Pages').all().map(i => i.json);\nconst alertedIds = new Set();\nfor (const p of existingPages) {\n  const eid = getProp(p, 'Event ID');\n  if (eid && getProp(p, 'Alerted')) alertedIds.add(eid);\n}\n\nconst scored = $('Attach Previews').all().map(item => item.json);\nconst above = scored.filter(ev => ev.concert_score >= THRESHOLD);\nconst newEvents = above.filter(ev => !alertedIds.has(ev.event_id));\n\nif (newEvents.length === 0) {\n  return [{ json: { hasNew: false, count: 0, emailHtml: '' } }];\n}\nfunction formatDate(iso) {\n  if (!iso) return 'TBD';\n  const d = new Date(iso);\n  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/New_York' });\n}\nfunction calendarUrl(ev) {\n  const title = encodeURIComponent(ev.artist_name + ' at ' + (ev.venue_name || 'TBD'));\n  const loc = encodeURIComponent((ev.venue_name || '') + ', ' + (ev.venue_city || '') + ', ' + (ev.venue_state || ''));\n  const details = encodeURIComponent('Score: ' + ev.concert_score + ' — ' + (ev.ticket_url || ''));\n\n  let startStr, endStr;\n  if (ev.date) {\n    const d = new Date(ev.date);\n    const utcHour = d.getUTCHours();\n    const utcMin = d.getUTCMinutes();\n    const isMidnightish = (utcHour === 0 && utcMin < 30) || (utcHour === 23 && utcMin >= 30);\n\n    if (isMidnightish) {\n      const etDate = new Date(d.toLocaleString('en-US', { timeZone: 'America/New_York' }));\n      const yr = etDate.getFullYear();\n      const mo = String(etDate.getMonth() + 1).padStart(2, '0');\n      const dy = String(etDate.getDate()).padStart(2, '0');\n      startStr = `${yr}${mo}${dy}T200000`;\n      endStr   = `${yr}${mo}${dy}T230000`;\n    } else {\n      const fmt = (n) => String(n).padStart(2, '0');\n      const yr = d.getUTCFullYear();\n      const mo = fmt(d.getUTCMonth() + 1);\n      const dy = fmt(d.getUTCDate());\n      const hr = fmt(d.getUTCHours());\n      const mn = fmt(d.getUTCMinutes());\n      startStr = `${yr}${mo}${dy}T${hr}${mn}00Z`;\n      const endD = new Date(d.getTime() + 3 * 60 * 60 * 1000);\n      endStr = `${endD.getUTCFullYear()}${fmt(endD.getUTCMonth()+1)}${fmt(endD.getUTCDate())}T${fmt(endD.getUTCHours())}${fmt(endD.getUTCMinutes())}00Z`;\n    }\n  } else {\n    startStr = '20260101T200000';\n    endStr   = '20260101T230000';\n  }\n\n  return 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + title + '&dates=' + startStr + '/' + endStr + '&location=' + loc + '&details=' + details;\n}\nlet html = '<h2 style=\"font-family:sans-serif;color:#1a1a1a;\">🎵 Concert Alerts</h2>';\nhtml += '<p style=\"font-family:sans-serif;color:#555;\">' + newEvents.length + ' new concert' + (newEvents.length > 1 ? 's' : '') + ' matched your listening profile:</p>';\nfor (const ev of newEvents) {\n  const artistLine = ev.is_opener\n    ? ev.artist_name + ' <span style=\"color:#888;\">(opening for ' + ev.headliner_name + ')</span>'\n    : ev.artist_name;\n  const price = ev.price_min != null ? '$' + ev.price_min : 'TBD';\n  const dist = ev.distance_miles != null ? ev.distance_miles + ' mi' : 'TBD';\n  const sb = ev.score_breakdown;\n  html += '<div style=\"font-family:sans-serif;border:1px solid #e0e0e0;border-radius:8px;padding:16px;margin:12px 0;\">';\n  html += '<h3 style=\"margin:0 0 4px 0;\">' + artistLine + '</h3>';\n  html += '<p style=\"margin:4px 0;color:#333;\">' + (ev.venue_name || 'TBD') + ', ' + (ev.venue_city || '') + '</p>';\n  html += '<p style=\"margin:4px 0;color:#333;\">' + formatDate(ev.date) + ' &middot; ' + dist + ' &middot; ' + price + '</p>';\n  html += '<p style=\"margin:8px 0 4px 0;font-weight:bold;font-size:18px;color:#2d7d46;\">Score: ' + ev.concert_score + '</p>';\n  html += '<p style=\"margin:0;color:#888;font-size:13px;\">recency ' + sb.recency + ' &middot; frequency ' + sb.frequency + ' &middot; distance ' + sb.distance + ' &middot; price ' + sb.price + ' &middot; venue ' + sb.venue + '</p>';\n  if (ev.setlist_preview && ev.setlist_preview !== 'No preview available.') {\n    html += '<p style=\"margin:10px 0 0 0;color:#555;font-style:italic;font-size:14px;line-height:1.4;\">🎤 ' + ev.setlist_preview + '</p>';\n  }\n  html += '<p style=\"margin:12px 0 0 0;\">';\n  html += '<a href=\"' + (ev.ticket_url || '#') + '\" style=\"background:#2d7d46;color:#fff;padding:8px 16px;border-radius:4px;text-decoration:none;margin-right:8px;\">Get Tickets</a>';\n  html += '<a href=\"' + calendarUrl(ev) + '\" style=\"background:#4285f4;color:#fff;padding:8px 16px;border-radius:4px;text-decoration:none;\">Add to Calendar</a>';\n  html += '</p></div>';\n}\nreturn [{ json: { hasNew: true, count: newEvents.length, emailHtml: html, subject: '🎵 ' + newEvents.length + ' new concert alert' + (newEvents.length > 1 ? 's' : '') } }];\n"
       },
-      "id": "627f64f5-c47e-4027-b24e-313d5a9352e3",
+      "id": "7f8598b6-848a-4adb-b758-f1cb161e3c56",
       "name": "Filter & De-dupe",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4768,
-        1552
+        7904,
+        3008
       ]
     },
     {
@@ -315,13 +315,13 @@
         },
         "options": {}
       },
-      "id": "f6fc5c7b-7493-44a9-baad-0d2143bbde57",
+      "id": "953c4515-c28b-4b8e-a66a-fc8d060cebd6",
       "name": "Has New Alerts?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        4992,
-        1552
+        8128,
+        3008
       ]
     },
     {
@@ -333,13 +333,13 @@
           "appendAttribution": false
         }
       },
-      "id": "da590c52-789d-450e-89a2-6bd46d34fa56",
+      "id": "237336d7-24e7-4fb2-b2a8-58452559ca81",
       "name": "Send Alert Email",
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.1,
       "position": [
-        5216,
-        1552
+        8352,
+        3008
       ],
       "webhookId": "eacc0e6a-76f2-45ec-8d46-dd0d0d12eb50",
       "credentials": {
@@ -356,10 +356,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4768,
-        1744
+        7904,
+        3200
       ],
-      "id": "c0f688fb-0734-4b98-8a73-cc9d5da17486",
+      "id": "34ca1d5d-af47-4071-a6eb-cc73624bb9f6",
       "name": "Calendar Prep"
     },
     {
@@ -381,10 +381,10 @@
       "type": "n8n-nodes-base.googleCalendar",
       "typeVersion": 1.3,
       "position": [
-        4992,
-        1744
+        8128,
+        3200
       ],
-      "id": "335fcec8-9c61-4582-af61-4d5c8d461002",
+      "id": "bd5643c0-fc85-4080-81cf-81df285cac86",
       "name": "Create an event",
       "credentials": {
         "googleCalendarOAuth2Api": {
@@ -400,10 +400,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4768,
-        1936
+        7904,
+        3392
       ],
-      "id": "a85412ed-f2ff-4535-8972-b55837d38888",
+      "id": "7cd22685-d811-47d8-bc5c-9faa9c566720",
       "name": "Notion Prep"
     },
     {
@@ -496,10 +496,10 @@
       "type": "n8n-nodes-base.notion",
       "typeVersion": 2.2,
       "position": [
-        5216,
-        1840
+        8352,
+        3296
       ],
-      "id": "2bf4e938-ad56-47cb-985b-dc9c32f07616",
+      "id": "ab37238f-a690-4c32-af7e-da532c50a68d",
       "name": "Create a database page",
       "credentials": {
         "notionApi": {
@@ -515,10 +515,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3424,
-        1840
+        6560,
+        3296
       ],
-      "id": "301f78ca-679e-4216-ad83-7b6ae96bbeb4",
+      "id": "e63cec27-663a-4cd6-9549-f398e493bc05",
       "name": "Setlist Prep",
       "alwaysOutputData": true
     },
@@ -543,10 +543,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        3648,
-        1840
+        6784,
+        3296
       ],
-      "id": "16b65ef5-00a8-40f5-94a6-fd87adc6407c",
+      "id": "7de8a827-063a-4148-9940-1f6ab4b0c84f",
       "name": "Setlist.fm Request",
       "alwaysOutputData": true,
       "onError": "continueRegularOutput"
@@ -559,10 +559,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3872,
-        1840
+        7008,
+        3296
       ],
-      "id": "622f7427-1ae5-4c51-b573-14e1b5a681db",
+      "id": "938b8224-e718-406f-a901-07992fae2789",
       "name": "Build Prompt"
     },
     {
@@ -594,10 +594,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        4096,
-        1840
+        7232,
+        3296
       ],
-      "id": "182d98ff-c72e-4332-a3db-7c84acba21b6",
+      "id": "e89803be-669f-46f1-9b00-e667bce8a1f1",
       "name": "Claude Request",
       "alwaysOutputData": true,
       "onError": "continueRegularOutput"
@@ -609,10 +609,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4320,
-        1840
+        7456,
+        3296
       ],
-      "id": "66269306-50e6-4d69-ba65-c77989dd0954",
+      "id": "da93eb66-e7a1-4e7d-a6ee-9ac2d6ae2c33",
       "name": "Attach Previews"
     },
     {
@@ -632,10 +632,10 @@
       "type": "n8n-nodes-base.notion",
       "typeVersion": 2.2,
       "position": [
-        4544,
-        1840
+        7680,
+        3296
       ],
-      "id": "0f085a75-a8af-4fca-ad9f-788e7bb86d49",
+      "id": "c8557de1-1b93-4f5f-9b1b-cef05edc53ec",
       "name": "Get Notion Pages",
       "executeOnce": true,
       "alwaysOutputData": true,
@@ -730,10 +730,10 @@
       "type": "n8n-nodes-base.notion",
       "typeVersion": 2.2,
       "position": [
-        5216,
-        2032
+        8352,
+        3488
       ],
-      "id": "1b6e4c1d-13ae-4e8b-8a35-db186e25fb95",
+      "id": "f9958ad2-ff7c-4d28-b90c-cdb312a6fce8",
       "name": "Update a database page",
       "credentials": {
         "notionApi": {
@@ -769,10 +769,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        4992,
-        1936
+        8128,
+        3392
       ],
-      "id": "733cbf11-dafc-4619-b7a4-b682cf8f0b8a",
+      "id": "7443fc3e-7d42-4c5f-8402-3e484d16ca4d",
       "name": "Route Create vs Update"
     }
   ],
@@ -865,17 +865,6 @@
         ]
       ]
     },
-    "Code in JavaScript": {
-      "main": [
-        [
-          {
-            "node": "Loop Over Items",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Wait": {
       "main": [
         [
@@ -902,7 +891,7 @@
       "main": [
         [
           {
-            "node": "Code in JavaScript",
+            "node": "Build Artist Profile",
             "type": "main",
             "index": 0
           }
@@ -1079,6 +1068,17 @@
           }
         ]
       ]
+    },
+    "Build Artist Profile": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
@@ -1090,7 +1090,7 @@
     "availableInMCP": false,
     "executionTimeout": -1
   },
-  "versionId": "e929e620-5608-4940-bc4e-56925f339e98",
+  "versionId": "114d2be9-e5c4-475e-b63a-68325fa028c7",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "e76c71c99645109aec7e39fa4c33cdf40c88a2bf41ffac722edec50922f704ca"
