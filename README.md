@@ -68,21 +68,32 @@ An n8n workflow that cross-references your Spotify listening history against upc
                                                         │ Attach Previews  │
                                                         │ to scored events │
                                                         └────────┬─────────┘
-                                                                 │
+                                                                 ▼
+                                                        ┌──────────────────┐
+                                                        │ Get Notion Pages │
+                                                        │ (existing rows = │
+                                                        │  de-dupe source) │
+                                                        └────────┬─────────┘
                               ┌──────────────────────────────────┼──────────────────────────────┐
-                              │                                  │                              │
                               ▼                                  ▼                              ▼
                    ┌──────────────────┐              ┌──────────────────┐           ┌──────────────────┐
                    │  Filter & De-dupe│              │  Calendar Prep   │           │   Notion Prep    │
-                   │  (score ≥ 40,    │              │  (score ≥ 60,    │           │   (all events)   │
-                   │   new only)      │              │   new only)      │           └────────┬─────────┘
-                   └────────┬─────────┘              └────────┬─────────┘                    │
-                            │                                 │                              ▼
-                            ▼                                 ▼                   ┌──────────────────┐
-                   ┌──────────────────┐             ┌──────────────────┐          │  Notion Concert  │
-                   │  Gmail Alert     │             │  Google Calendar │          │  Tracker DB      │
-                   │  (HTML digest)   │             │  Event           │          └──────────────────┘
-                   └──────────────────┘             └──────────────────┘
+                   │  (score ≥ 40,    │              │  (score ≥ 60,    │           │  (all events;    │
+                   │   not yet        │              │   not yet on     │           │   tag create/    │
+                   │   alerted)       │              │   calendar)      │           │   update)        │
+                   └────────┬─────────┘              └────────┬─────────┘           └────────┬─────────┘
+                            ▼                                 ▼                              ▼
+                   ┌──────────────────┐             ┌──────────────────┐          ┌──────────────────┐
+                   │  Gmail Alert     │             │  Google Calendar │          │ Route Create vs  │
+                   │  (HTML digest)   │             │  Event           │          │ Update           │
+                   └──────────────────┘             └──────────────────┘          └───┬──────────┬───┘
+                                                                                 new │          │ existing
+                                                                                     ▼          ▼
+                                                                            ┌──────────┐  ┌──────────┐
+                                                                            │  Create  │  │  Update  │
+                                                                            │  Notion  │  │  Notion  │
+                                                                            │  page    │  │  page    │
+                                                                            └──────────┘  └──────────┘
 ```
 
 ---
@@ -151,13 +162,13 @@ If an artist is opening rather than headlining, the prompt notes the shorter exp
 After previews are attached, all scored events fan out to three parallel output branches:
 
 #### Email Alert (score ≥ 40)
-An HTML digest is sent via Gmail listing only new events (de-duped against previously seen event IDs stored in workflow static data). Each card shows artist, venue, date, distance, price, score breakdown, the Claude-generated setlist preview, and buttons to buy tickets or add to Google Calendar.
+An HTML digest is sent via Gmail listing only events not already alerted (de-duped against Notion's `Alerted` flag — see [De-duplication](#de-duplication)). Each card shows artist, venue, date, distance, price, score breakdown, the Claude-generated setlist preview, and buttons to buy tickets or add to Google Calendar.
 
 #### Google Calendar (score ≥ 60)
 High-confidence shows are automatically added to your Google Calendar with venue, ticket link, score breakdown, and setlist preview in the event description.
 
 #### Notion Tracker (all matched events)
-Every matched concert — regardless of score — is logged to a **Concert Tracker** Notion database with full metadata: score, breakdown, opener status, distance, price, ticket URL, dates discovered and performed, and the setlist preview.
+Every matched concert — regardless of score — is logged to a **Concert Tracker** Notion database with full metadata: score, breakdown, opener status, distance, price, ticket URL, dates discovered and performed, and the setlist preview. Page titles include the show date (e.g. `ROSALÍA at Madison Square Garden — Jun 18, 2026`) so same-venue multi-night runs stay distinct. New events are created; events already tracked are updated in place (see [De-duplication](#de-duplication)).
 
 ---
 
