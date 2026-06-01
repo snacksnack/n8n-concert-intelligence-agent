@@ -76,18 +76,18 @@ An n8n workflow that cross-references your Spotify listening history against upc
             ┌─────────────────────────────────────────────────────────┼──────────────────────────────┐
             ▼                                                          ▼                              ▼
    ┌──────────────────┐                                     ┌──────────────────┐           ┌──────────────────┐
-   │ Filter & De-dupe │                                     │ Calendar Prep    │           │ Notion Prep      │
-   │ (score ≥ 40,     │                                     │ (score ≥ 60,     │           │ (all events;     │
-   │  not yet alerted)│                                     │  not yet on      │           │  tag create/     │
+   │ Build Email      │                                     │ Calendar Prep    │           │ Notion Prep      │
+   │ Digest           │                                     │ (score ≥ 60,     │           │ (all events;     │
+   │ (all matches)    │                                     │  not yet on      │           │  tag create/     │
    └────────┬─────────┘                                     │  calendar)       │           │  update)         │
             ▼                                                └────────┬─────────┘           └────────┬─────────┘
    ┌──────────────────┐                                              ▼                              ▼
-   │ Has New Alerts?  │                                     ┌──────────────────┐           ┌──────────────────┐
+   │ Send Digest?     │                                     ┌──────────────────┐           ┌──────────────────┐
    │ (IF)             │                                     │ Create an event  │           │ Route Create vs  │
    └────────┬─────────┘                                     │ (Google Calendar)│           │ Update (IF)      │
             ▼                                                └──────────────────┘           └───┬──────────┬───┘
    ┌──────────────────┐                                                                    new │          │ existing
-   │ Send Alert Email │                                                                        ▼          ▼
+   │ Send Digest      │                                                                        ▼          ▼
    │ (Gmail digest)   │                                                                 ┌──────────┐ ┌──────────┐
    └──────────────────┘                                                                 │ Create a │ │ Update a │
                                                                                         │ database │ │ database │
@@ -113,6 +113,8 @@ Three parallel API calls pull your top artists across all time windows:
 
 A fourth call fetches your recently played tracks (up to 50). All four streams are merged into a single artist map that captures each artist's rank across all three windows, how many times they've appeared in recent plays, and how many days ago you last listened to them.
 
+Spotify recently-played data is only a small track window, so an artist can be a very recent listener favorite without appearing there. The score therefore treats exact recently-played timestamps as best evidence, then falls back to short-term top-artist rank for the recency component.
+
 Artist names are normalized (lowercased, diacritics stripped, featured-artist suffixes removed) to support fuzzy matching downstream.
 
 ### 2. Concert Discovery
@@ -135,7 +137,7 @@ Every matched concert is scored out of **100 points** across five dimensions:
 
 | Dimension | Max | How it's calculated |
 |-----------|-----|---------------------|
-| **Recency** | 30 | Days since you last played the artist (0 days = 30pts, ≤7 = 25, ≤30 = 15, ≤90 = 5, else 0) |
+| **Recency** | 30 | Days since the artist appeared in Spotify recently played when available (0 days = 30pts, ≤7 = 25, ≤30 = 15, ≤90 = 5); if exact recent-play data is missing, falls back to short-term top-artist rank (top 10 = 20, top 25 = 12, top 50 = 6) |
 | **Frequency** | 25 | Recent play count (2pts each, cap 15) + rank bonuses across all three Spotify windows |
 | **Distance** | 20 | Miles from home (≤5mi = 20, ≤15 = 15, ≤30 = 10, ≤50 = 5) |
 | **Price** | 15 | Minimum ticket price (≤$50 = 15, ≤$100 = 10, ≤$200 = 5, else 0) |
@@ -168,14 +170,14 @@ If an artist is opening rather than headlining, the prompt notes the shorter exp
 
 After previews are attached, all scored events fan out to three parallel output branches:
 
-#### Email Alert (score ≥ 40)
-An HTML digest is sent via Gmail listing only events not already alerted (de-duped against Notion's `Alerted` flag — see [De-duplication](#de-duplication)). Each card shows artist, venue, date, distance, price, score breakdown, the Claude-generated setlist preview, and buttons to buy tickets or add to Google Calendar.
+#### Email Digest (all matched events)
+An HTML digest is sent via Gmail on every successful run, listing all current matched concerts grouped by score band: Strong matches, Good matches, Maybe worth a look, and Long shots. It is intentionally **not** de-duped against Notion, so repeat runs still send the current ranked list. Each card shows artist, venue, date, distance, price, a visual score breakdown, the Claude-generated setlist preview, and buttons to buy tickets or add to Google Calendar.
 
 #### Google Calendar (score ≥ 60)
 High-confidence shows are automatically added to your Google Calendar with venue, ticket link, score breakdown, and setlist preview in the event description.
 
 #### Notion Tracker (all matched events)
-Every matched concert — regardless of score — is logged to a **Concert Tracker** Notion database with full metadata: score, breakdown, opener status, distance, price, ticket URL, dates discovered and performed, and the setlist preview. Page titles include the show date (e.g. `ROSALÍA at Madison Square Garden — Jun 18, 2026`) so same-venue multi-night runs stay distinct. New events are created; events already tracked are updated in place (see [De-duplication](#de-duplication)).
+Every matched concert — regardless of score — is logged to a **Concert Tracker** Notion database with full metadata: score, visual score breakdown, opener status, distance, price, ticket URL, dates discovered and performed, and the setlist preview. Page titles include the show date (e.g. `ROSALÍA at Madison Square Garden — Jun 18, 2026`) so same-venue multi-night runs stay distinct. New events are created; events already tracked are updated in place (see [De-duplication](#de-duplication)). For newly created pages, the workflow also appends a richer page-body section with the scorecard, show details, setlist preview, and ticket link.
 
 ---
 
@@ -191,7 +193,7 @@ Every matched concert — regardless of score — is logged to a **Concert Track
   - Anthropic API
   - Gmail (OAuth2)
   - Google Calendar (OAuth2)
-  - Notion (internal integration)
+  - Notion (internal integration; used by both database updates and page-body block appends)
 
 ### Credentials
 
@@ -203,9 +205,9 @@ Configure the following in n8n:
 | `$vars.SETLIST_FM_API_KEY` | Setlist fetching |
 | `$vars.ANTHROPIC_API_KEY` | Claude preview generation |
 | Spotify OAuth2 (`DYX2e4Iy4Laa0AiF`) | Spotify top artists + recently played |
-| Gmail OAuth2 | Alert emails |
+| Gmail OAuth2 | Email digest |
 | Google Calendar OAuth2 | Auto calendar events |
-| Notion API | Concert Tracker database |
+| Notion API | Concert Tracker database + page-body block appends |
 
 ### Location
 
@@ -257,7 +259,7 @@ The script prints matched artists, the exact Ticketmaster event each matched, an
 | Threshold | Action |
 |-----------|--------|
 | Any score | Logged to Notion Concert Tracker |
-| ≥ 40 | Email alert sent (first time only) |
+| Any score | Included in every email digest, grouped by score band |
 | ≥ 60 | Google Calendar event created (first time only) |
 
 ### De-duplication
@@ -265,11 +267,11 @@ The script prints matched artists, the exact Ticketmaster event each matched, an
 De-dupe state is **not** kept in n8n workflow static data (it gets wiped on re-save / version change on n8n Cloud, which caused duplicate entries). Instead, **Notion is the durable source of truth**:
 
 - A single `Get Notion Pages` node reads the Concert Tracker at the start of each run.
-- **Notion** — events already present (by `Event ID`) are *updated* (keeping Score / Alerted / On Calendar current); new ones are *created*. The `Status` field is left untouched on update so manual status changes survive.
-- **Email** — sent only if the event isn't already in Notion with `Alerted = true`.
+- **Notion** — events already present (by `Event ID`) are *updated* (keeping Score / Alerted / On Calendar current); new ones are *created*. The `Status` field is left untouched on update so manual status changes survive. The `Breakdown` property is written as a compact visual score card using colored text bars, so each Notion page has a scan-friendly explanation similar to the email card. Rich page-body blocks are appended only for newly created pages to avoid duplicating the same scorecard on every run.
+- **Email** — the digest is sent every successful run and is based on all current scored matches, not on whether Notion has seen the event before. The `Alerted` property remains a useful marker that the event cleared the original alert threshold.
 - **Calendar** — created only if the event isn't already in Notion with `On Calendar = true`.
 
-Because the per-run Notion snapshot is read before any writes and the flags are flipped on update, an event that later climbs across a threshold (e.g. after a re-listen) is alerted exactly once and never repeats.
+Because the per-run Notion snapshot is read before any writes and the flags are flipped on update, Calendar events are created once even if an event appears in later runs. Email is the exception: it is a current-run digest and intentionally repeats the current list.
 
 ---
 
