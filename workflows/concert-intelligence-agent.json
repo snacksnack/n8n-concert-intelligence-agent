@@ -132,6 +132,19 @@
     },
     {
       "parameters": {
+        "jsCode": "// Reset per-execution Ticketmaster match accumulator before building search windows.\nconst workflowStaticData = $getWorkflowStaticData('global');\nworkflowStaticData.ticketmasterMatchedConcerts = [];\nworkflowStaticData.ticketmasterSeenConcertKeys = [];\n\n// Ticketmaster caps paging depth: page * size must be less than 1,000.\n// Split the 6-month search into monthly windows and fetch pages 0-4 for each.\nconst MONTHS_AHEAD = 6;\nconst MAX_PAGES_PER_WINDOW = 5;\n\nfunction toTmDate(date) {\n  return date.toISOString().split('.')[0] + 'Z';\n}\n\nconst now = new Date();\nconst end = new Date(now);\nend.setMonth(end.getMonth() + MONTHS_AHEAD);\n\nconst windows = [];\nlet cursor = new Date(now);\nwhile (cursor < end) {\n  const windowStart = new Date(cursor);\n  const windowEnd = new Date(cursor);\n  windowEnd.setMonth(windowEnd.getMonth() + 1);\n  if (windowEnd > end) windowEnd.setTime(end.getTime());\n\n  for (let page = 0; page < MAX_PAGES_PER_WINDOW; page++) {\n    windows.push({\n      json: {\n        page,\n        startDateTime: toTmDate(windowStart),\n        endDateTime: toTmDate(windowEnd),\n      },\n    });\n  }\n\n  cursor = windowEnd;\n}\n\nreturn windows;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5664,
+        3296
+      ],
+      "id": "a47f9c68-2d20-45f3-8fda-ticketmaster-pages",
+      "name": "Build Ticketmaster Search Windows"
+    },
+    {
+      "parameters": {
         "url": "https://app.ticketmaster.com/discovery/v2/events.json",
         "sendQuery": true,
         "queryParameters": {
@@ -162,20 +175,30 @@
             },
             {
               "name": "startDateTime",
-              "value": "={{ $now.toUTC().toFormat(\"yyyy-MM-dd'T'HH:mm:ss'Z'\") }}"
+              "value": "={{ $json.startDateTime }}"
             },
             {
               "name": "endDateTime",
-              "value": "={{ $now.plus({months: 6}).toUTC().toFormat(\"yyyy-MM-dd'T'HH:mm:ss'Z'\") }}"
+              "value": "={{ $json.endDateTime }}"
+            },
+            {
+              "name": "sort",
+              "value": "date,asc"
+            },
+            {
+              "name": "page",
+              "value": "={{ $json.page }}"
             }
           ]
         },
-        "options": {}
+        "options": {
+          "ignoreResponseCode": true
+        }
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        5888,
+        6112,
         3296
       ],
       "id": "b61f3391-e93d-480c-84c0-d2814fd8cd03",
@@ -253,12 +276,12 @@
     },
     {
       "parameters": {
-        "jsCode": "// Get the Spotify artist profile from the Build Artist Profile node\nconst artists = $('Build Artist Profile').all().map(item => item.json);\n\n// Get the Ticketmaster response\nconst tmResponse = $input.first().json;\nconst events = tmResponse._embedded?.events || [];\n\n// User location (Downtown Brooklyn) for haversine distance\nconst USER_LAT = 40.6928;\nconst USER_LNG = -73.9903;\n\nfunction haversineMiles(lat1, lng1, lat2, lng2) {\n  const R = 3958.8;\n  const toRad = d => d * Math.PI / 180;\n  const dLat = toRad(lat2 - lat1);\n  const dLng = toRad(lng2 - lng1);\n  const a = Math.sin(dLat / 2) ** 2\n          + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;\n  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));\n}\n\nfunction normalizeName(name) {\n  return name\n    .toLowerCase()\n    .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')\n    .replace(/\\s*[\\(\\[].*?[\\)\\]]\\s*/g, '')\n    .replace(/\\bfeat\\.?\\b.*$/i, '')\n    .replace(/\\bft\\.?\\b.*$/i, '')\n    .trim();\n}\n\nfunction levenshtein(a, b) {\n  if (a === b) return 0;\n  if (!a.length) return b.length;\n  if (!b.length) return a.length;\n  const dp = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));\n  for (let i = 0; i <= a.length; i++) dp[i][0] = i;\n  for (let j = 0; j <= b.length; j++) dp[0][j] = j;\n  for (let i = 1; i <= a.length; i++) {\n    for (let j = 1; j <= b.length; j++) {\n      dp[i][j] = a[i - 1] === b[j - 1]\n        ? dp[i - 1][j - 1]\n        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);\n    }\n  }\n  return dp[a.length][b.length];\n}\n\nconst artistByNormalized = {};\nfor (const a of artists) {\n  artistByNormalized[a.name_normalized] = a;\n}\n\nfunction findMatch(eventArtistName) {\n  const normalized = normalizeName(eventArtistName);\n  if (artistByNormalized[normalized]) return artistByNormalized[normalized];\n  for (const a of artists) {\n    const dist = levenshtein(normalized, a.name_normalized);\n    const maxLen = Math.max(normalized.length, a.name_normalized.length);\n    if (dist <= 2 && dist / maxLen < 0.3) return a;\n  }\n  return null;\n}\n\nconst matched = [];\nfor (const ev of events) {\n  const attractions = ev._embedded?.attractions || [];\n  if (attractions.length === 0) continue;\n\n  let matchedArtist = null;\n  let matchedAttraction = null;\n  for (const att of attractions) {\n    const m = findMatch(att.name);\n    if (m) { matchedArtist = m; matchedAttraction = att; break; }\n  }\n  if (!matchedArtist) continue;\n\n  const headlinerName = attractions[0]?.name || null;\n  const isOpener = matchedAttraction.name !== headlinerName;\n\n  const venue = ev._embedded?.venues?.[0] || {};\n  const venueLat = parseFloat(venue.location?.latitude);\n  const venueLng = parseFloat(venue.location?.longitude);\n  const distance = (venueLat && venueLng)\n    ? Math.round(haversineMiles(USER_LAT, USER_LNG, venueLat, venueLng) * 10) / 10\n    : null;\n\n  const priceRanges = ev.priceRanges || [];\n  const priceMin = priceRanges[0]?.min ?? null;\n  const priceMax = priceRanges[0]?.max ?? null;\n\n  matched.push({\n    event_id: `tm:${ev.id}`,\n    source: 'ticketmaster',\n    artist_id: matchedArtist.id,\n    artist_name: matchedArtist.name,\n    artist_name_matched: matchedAttraction.name,\n    headliner_name: headlinerName,\n    is_opener: isOpener,\n    date: ev.dates?.start?.dateTime || ev.dates?.start?.localDate || null,\n    venue_name: venue.name || null,\n    venue_city: venue.city?.name || null,\n    venue_state: venue.state?.stateCode || null,\n    venue_lat: venueLat || null,\n    venue_lng: venueLng || null,\n    distance_miles: distance,\n    ticket_url: ev.url || null,\n    price_min: priceMin,\n    price_max: priceMax,\n    on_sale: ev.dates?.status?.code === 'onsale',\n    days_since_played: matchedArtist.days_since_played,\n    short_term_rank: matchedArtist.short_term_rank,\n    medium_term_rank: matchedArtist.medium_term_rank,\n    long_term_rank: matchedArtist.long_term_rank,\n    recent_play_count: matchedArtist.recent_play_count,\n  });\n}\n\nreturn matched.map(m => ({ json: m }));"
+        "jsCode": "// Get the Spotify artist profile from the Build Artist Profile node\nconst artists = $('Build Artist Profile').all().map(item => item.json);\n\n// Match only the current compact Ticketmaster page.\n// The loop stores only matched concerts, which keeps n8n Cloud memory low.\nconst inputItems = $input.all().map(item => item.json);\nif (inputItems.every(item => item.__ticketmasterLoopControl)) {\n  return [{ json: { __ticketmasterLoopControl: true } }];\n}\nconst events = inputItems.filter(item => !item.__ticketmasterLoopControl);\n\n// User location (Downtown Brooklyn) for haversine distance\nconst USER_LAT = 40.6928;\nconst USER_LNG = -73.9903;\n\nfunction haversineMiles(lat1, lng1, lat2, lng2) {\n  const R = 3958.8;\n  const toRad = d => d * Math.PI / 180;\n  const dLat = toRad(lat2 - lat1);\n  const dLng = toRad(lng2 - lng1);\n  const a = Math.sin(dLat / 2) ** 2\n          + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;\n  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));\n}\n\nfunction normalizeName(name) {\n  return String(name || '')\n    .toLowerCase()\n    .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')\n    .replace(/\\s*[\\(\\[].*?[\\)\\]]\\s*/g, '')\n    .replace(/\\bfeat\\.?\\b.*$/i, '')\n    .replace(/\\bft\\.?\\b.*$/i, '')\n    .replace(/&/g, ' and ')\n    .replace(/[^a-z0-9]+/g, ' ')\n    .trim();\n}\n\nfunction levenshtein(a, b) {\n  if (a === b) return 0;\n  if (!a.length) return b.length;\n  if (!b.length) return a.length;\n  const dp = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));\n  for (let i = 0; i <= a.length; i++) dp[i][0] = i;\n  for (let j = 0; j <= b.length; j++) dp[0][j] = j;\n  for (let i = 1; i <= a.length; i++) {\n    for (let j = 1; j <= b.length; j++) {\n      dp[i][j] = a[i - 1] === b[j - 1]\n        ? dp[i - 1][j - 1]\n        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);\n    }\n  }\n  return dp[a.length][b.length];\n}\n\nconst artistByNormalized = {};\nfor (const a of artists) {\n  artistByNormalized[a.name_normalized || normalizeName(a.name)] = a;\n}\n\nfunction findMatch(eventArtistName) {\n  const normalized = normalizeName(eventArtistName);\n  if (artistByNormalized[normalized]) return artistByNormalized[normalized];\n  for (const a of artists) {\n    const artistNormalized = a.name_normalized || normalizeName(a.name);\n    if (normalized.length < 8 || artistNormalized.length < 8) continue;\n    const dist = levenshtein(normalized, artistNormalized);\n    const maxLen = Math.max(normalized.length, artistNormalized.length);\n    if (dist <= 1 && dist / maxLen <= 0.15) return a;\n  }\n  return null;\n}\n\nconst workflowStaticData = $getWorkflowStaticData('global');\nif (!Array.isArray(workflowStaticData.ticketmasterMatchedConcerts)) workflowStaticData.ticketmasterMatchedConcerts = [];\nif (!Array.isArray(workflowStaticData.ticketmasterSeenConcertKeys)) workflowStaticData.ticketmasterSeenConcertKeys = [];\nconst matched = [];\nconst seenConcertKeys = new Set(workflowStaticData.ticketmasterSeenConcertKeys);\nfor (const ev of events) {\n  const attractions = ev.attractions || [];\n  const headlinerName = attractions[0]?.name || ev.name || null;\n  const venue = ev.venue || {};\n  const venueLat = parseFloat(venue.latitude);\n  const venueLng = parseFloat(venue.longitude);\n  const distance = (Number.isFinite(venueLat) && Number.isFinite(venueLng))\n    ? Math.round(haversineMiles(USER_LAT, USER_LNG, venueLat, venueLng) * 10) / 10\n    : null;\n\n  const matchesForEvent = [];\n  const seenArtistIds = new Set();\n  attractions.forEach((att, index) => {\n    const artist = findMatch(att.name);\n    if (!artist || seenArtistIds.has(artist.id)) return;\n    seenArtistIds.add(artist.id);\n    matchesForEvent.push({\n      artist,\n      matchedName: att.name,\n      matchType: 'attraction',\n      isOpener: index > 0,\n    });\n  });\n\n  for (const match of matchesForEvent) {\n    const matchedArtist = match.artist;\n    const eventId = matchesForEvent.length > 1\n      ? 'tm:' + ev.id + ':' + matchedArtist.id\n      : 'tm:' + ev.id;\n    const concertKey = [\n      matchedArtist.id,\n      ev.date,\n      normalizeName(venue.name),\n    ].join('|');\n    if (seenConcertKeys.has(concertKey)) continue;\n    seenConcertKeys.add(concertKey);\n\n    matched.push({\n      event_id: eventId,\n      source: 'ticketmaster',\n      artist_id: matchedArtist.id,\n      artist_name: matchedArtist.name,\n      artist_name_matched: match.matchedName,\n      match_type: match.matchType,\n      headliner_name: headlinerName,\n      is_opener: match.isOpener,\n      date: ev.date,\n      venue_name: venue.name || null,\n      venue_city: venue.city || null,\n      venue_state: venue.state || null,\n      venue_lat: Number.isFinite(venueLat) ? venueLat : null,\n      venue_lng: Number.isFinite(venueLng) ? venueLng : null,\n      distance_miles: distance,\n      ticket_url: ev.url || null,\n      price_min: ev.priceMin,\n      price_max: ev.priceMax,\n      on_sale: ev.status === 'onsale',\n      days_since_played: matchedArtist.days_since_played,\n      short_term_rank: matchedArtist.short_term_rank,\n      medium_term_rank: matchedArtist.medium_term_rank,\n      long_term_rank: matchedArtist.long_term_rank,\n      recent_play_count: matchedArtist.recent_play_count,\n    });\n  }\n}\n\nif (matched.length > 0) {\n  workflowStaticData.ticketmasterMatchedConcerts.push(...matched);\n  workflowStaticData.ticketmasterSeenConcertKeys = Array.from(seenConcertKeys);\n}\n\n// Always return one item so the loop advances to the Wait node, even when a page has no matches.\nreturn [{ json: { __ticketmasterLoopControl: true, matched_count: matched.length } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        6112,
+        6560,
         3296
       ],
       "id": "7f6434a7-8989-4d93-95c3-03f86ed1619d",
@@ -266,12 +289,12 @@
     },
     {
       "parameters": {
-        "jsCode": "// Venue fit tier list — personalized to user preference for small/indie venues\nconst VENUE_TIERS = {\n  // 10 points: DIY / intimate (~200-500 cap)\n  \"brooklyn made\": 10,\n  \"baby's all right\": 10,\n  \"union pool\": 10,\n  \"sultan room\": 10,\n  \"saint vitus\": 10,\n  \"tv eye\": 10,\n  \"market hotel\": 10,\n  \"trans-pecos\": 10,\n  \"public records\": 10,\n\n  // 7 points: mid-sized indie (~500-1500 cap)\n  \"music hall of williamsburg\": 7,\n  \"bowery ballroom\": 7,\n  \"mercury lounge\": 7,\n  \"knockdown center\": 7,\n  \"elsewhere\": 7,\n  \"brooklyn paramount\": 7,\n  \"le poisson rouge\": 7,\n  \"(le) poisson rouge\": 7,\n\n  // 5 points: larger but acceptable (~1500-3000 cap)\n  \"brooklyn steel\": 5,\n  \"webster hall\": 5,\n  \"warsaw\": 5,\n  \"kings theatre\": 5,\n  \"beacon theatre\": 5,\n  \"terminal 5\": 5,\n  \"brooklyn mirage\": 5,\n\n  // 1 point: large arenas/stadiums (actively dispreferred)\n  \"madison square garden\": 1,\n  \"barclays center\": 1,\n  \"metlife stadium\": 1,\n  \"prudential center\": 1,\n  \"forest hills stadium\": 1,\n  \"radio city music hall\": 1,\n};\nconst VENUE_DEFAULT = 3;\n\n// Score one event\nfunction scoreEvent(ev) {\n  // --- Recency (max 30)\n  let recency = 0;\n  const dsp = ev.days_since_played;\n  if (dsp === 0) recency = 30;\n  else if (dsp <= 7) recency = 25;\n  else if (dsp <= 30) recency = 15;\n  else if (dsp <= 90) recency = 5;\n  else recency = 0;\n\n  // --- Frequency (max 25)\n  const base = Math.min((ev.recent_play_count || 0) * 2, 15);\n  let rank_bonus = 0;\n  if (ev.short_term_rank != null) rank_bonus += ev.short_term_rank <= 10 ? 10 : 5;\n  if (ev.medium_term_rank != null) rank_bonus += ev.medium_term_rank <= 10 ? 5 : 3;\n  if (ev.long_term_rank != null) rank_bonus += ev.long_term_rank <= 10 ? 3 : 1;\n  const frequency = Math.min(base + rank_bonus, 25);\n\n  // --- Distance (max 20)\n  let distance = 10;\n  const d = ev.distance_miles;\n  if (d != null) {\n    if (d <= 5) distance = 20;\n    else if (d <= 15) distance = 15;\n    else if (d <= 30) distance = 10;\n    else if (d <= 50) distance = 5;\n    else distance = 0;\n  }\n\n  // --- Price (max 15)\n  let price = 8;\n  const p = ev.price_min;\n  if (p != null) {\n    if (p <= 50) price = 15;\n    else if (p <= 100) price = 10;\n    else if (p <= 200) price = 5;\n    else price = 0;\n  }\n\n  // --- Venue fit (max 10)\n  const venueKey = (ev.venue_name || \"\").toLowerCase().trim();\n  const venue = VENUE_TIERS[venueKey] ?? VENUE_DEFAULT;\n\n  const total = recency + frequency + distance + price + venue;\n\n  return {\n    ...ev,\n    concert_score: total,\n    score_breakdown: {\n      recency,\n      frequency,\n      distance,\n      price,\n      venue,\n    },\n  };\n}\n\nconst events = $input.all().map(item => item.json);\nconst scored = events.map(scoreEvent);\nscored.sort((a, b) => b.concert_score - a.concert_score);\nreturn scored.map(s => ({ json: s }));"
+        "jsCode": "// Venue fit tier list — personalized to user preference for small/indie venues\nconst VENUE_TIERS = {\n  // 10 points: DIY / intimate (~200-500 cap)\n  \"brooklyn made\": 10,\n  \"baby's all right\": 10,\n  \"union pool\": 10,\n  \"sultan room\": 10,\n  \"saint vitus\": 10,\n  \"tv eye\": 10,\n  \"market hotel\": 10,\n  \"trans-pecos\": 10,\n  \"public records\": 10,\n\n  // 7 points: mid-sized indie (~500-1500 cap)\n  \"music hall of williamsburg\": 7,\n  \"bowery ballroom\": 7,\n  \"mercury lounge\": 7,\n  \"knockdown center\": 7,\n  \"elsewhere\": 7,\n  \"brooklyn paramount\": 7,\n  \"le poisson rouge\": 7,\n  \"(le) poisson rouge\": 7,\n\n  // 5 points: larger but acceptable (~1500-3000 cap)\n  \"brooklyn steel\": 5,\n  \"webster hall\": 5,\n  \"warsaw\": 5,\n  \"kings theatre\": 5,\n  \"beacon theatre\": 5,\n  \"terminal 5\": 5,\n  \"brooklyn mirage\": 5,\n\n  // 1 point: large arenas/stadiums (actively dispreferred)\n  \"madison square garden\": 1,\n  \"barclays center\": 1,\n  \"metlife stadium\": 1,\n  \"prudential center\": 1,\n  \"forest hills stadium\": 1,\n  \"radio city music hall\": 1,\n};\nconst VENUE_DEFAULT = 3;\n\n// Score one event\nfunction scoreEvent(ev) {\n  // --- Recency (max 30)\n  let recency = 0;\n  const dsp = ev.days_since_played;\n  if (dsp === 0) recency = 30;\n  else if (dsp <= 7) recency = 25;\n  else if (dsp <= 30) recency = 15;\n  else if (dsp <= 90) recency = 5;\n  else recency = 0;\n\n  // --- Frequency (max 25)\n  const base = Math.min((ev.recent_play_count || 0) * 2, 15);\n  let rank_bonus = 0;\n  if (ev.short_term_rank != null) rank_bonus += ev.short_term_rank <= 10 ? 10 : 5;\n  if (ev.medium_term_rank != null) rank_bonus += ev.medium_term_rank <= 10 ? 5 : 3;\n  if (ev.long_term_rank != null) rank_bonus += ev.long_term_rank <= 10 ? 3 : 1;\n  const frequency = Math.min(base + rank_bonus, 25);\n\n  // --- Distance (max 20)\n  let distance = 10;\n  const d = ev.distance_miles;\n  if (d != null) {\n    if (d <= 5) distance = 20;\n    else if (d <= 15) distance = 15;\n    else if (d <= 30) distance = 10;\n    else if (d <= 50) distance = 5;\n    else distance = 0;\n  }\n\n  // --- Price (max 15)\n  let price = 8;\n  const p = ev.price_min;\n  if (p != null) {\n    if (p <= 50) price = 15;\n    else if (p <= 100) price = 10;\n    else if (p <= 200) price = 5;\n    else price = 0;\n  }\n\n  // --- Venue fit (max 10)\n  const venueKey = (ev.venue_name || \"\").toLowerCase().trim();\n  const venue = VENUE_TIERS[venueKey] ?? VENUE_DEFAULT;\n\n  const total = recency + frequency + distance + price + venue;\n\n  return {\n    ...ev,\n    concert_score: total,\n    score_breakdown: {\n      recency,\n      frequency,\n      distance,\n      price,\n      venue,\n    },\n  };\n}\n\n// Score only the concerts accumulated during the Ticketmaster loop.\n// The matcher writes compact matched concerts here per page, avoiding one huge event load.\nconst workflowStaticData = $getWorkflowStaticData('global');\nconst seen = new Set();\nconst events = (workflowStaticData.ticketmasterMatchedConcerts || [])\n  .filter(ev => {\n    const key = ev.event_id || [ev.artist_id, ev.date, ev.venue_name].join('|');\n    if (seen.has(key)) return false;\n    seen.add(key);\n    return true;\n  });\nworkflowStaticData.ticketmasterMatchedConcerts = [];\nworkflowStaticData.ticketmasterSeenConcertKeys = [];\nconst scored = events.map(scoreEvent);\nscored.sort((a, b) => b.concert_score - a.concert_score);\nreturn scored.map(s => ({ json: s }));"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        6336,
+        6112,
         3296
       ],
       "id": "82253101-db4a-4909-a181-f2bfa3eff291",
@@ -774,6 +797,46 @@
       ],
       "id": "7443fc3e-7d42-4c5f-8402-3e484d16ca4d",
       "name": "Route Create vs Update"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        5888,
+        3296
+      ],
+      "id": "d5d2bb5b-17f5-4a86-b12f-ticketmaster-loop",
+      "name": "Loop Over Ticketmaster Windows"
+    },
+    {
+      "parameters": {
+        "amount": 2
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        7008,
+        3296
+      ],
+      "id": "97b53345-07e4-4999-ae0d-ticketmaster-wait",
+      "name": "Wait Between Ticketmaster Requests",
+      "webhookId": "ticketmaster-rate-limit-wait"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Reduce each Ticketmaster page to compact event records before the loop stores output.\n// This keeps the later matching node from loading full raw Ticketmaster responses.\nconst response = $input.first().json;\nconst events = response._embedded?.events || [];\nif (events.length === 0) {\n  return [{ json: { __ticketmasterLoopControl: true, reason: 'empty_ticketmaster_page' } }];\n}\n\nfunction compactEvent(ev) {\n  return {\n    id: ev.id,\n    name: ev.name || null,\n    url: ev.url || null,\n    date: ev.dates?.start?.dateTime || ev.dates?.start?.localDate || null,\n    status: ev.dates?.status?.code || null,\n    attractions: (ev._embedded?.attractions || []).map(a => ({ name: a.name || null })).filter(a => a.name),\n    venue: (() => {\n      const venue = ev._embedded?.venues?.[0] || {};\n      return {\n        name: venue.name || null,\n        city: venue.city?.name || null,\n        state: venue.state?.stateCode || null,\n        latitude: venue.location?.latitude || null,\n        longitude: venue.location?.longitude || null,\n      };\n    })(),\n    priceMin: ev.priceRanges?.[0]?.min ?? null,\n    priceMax: ev.priceRanges?.[0]?.max ?? null,\n  };\n}\n\nreturn events.map(ev => ({ json: compactEvent(ev) }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6336,
+        3296
+      ],
+      "id": "b1488db0-3759-4f97-bb97-ticketmaster-compact",
+      "name": "Compact Ticketmaster Events"
     }
   ],
   "pinData": {},
@@ -802,7 +865,7 @@
             "index": 0
           },
           {
-            "node": "TicketMaster Request",
+            "node": "Build Ticketmaster Search Windows",
             "type": "main",
             "index": 0
           }
@@ -902,7 +965,7 @@
       "main": [
         [
           {
-            "node": "Match Concerts to Artists",
+            "node": "Compact Ticketmaster Events",
             "type": "main",
             "index": 0
           }
@@ -913,7 +976,7 @@
       "main": [
         [
           {
-            "node": "Score Concerts",
+            "node": "Wait Between Ticketmaster Requests",
             "type": "main",
             "index": 0
           }
@@ -1074,6 +1137,57 @@
         [
           {
             "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Ticketmaster Search Windows": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Ticketmaster Windows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Ticketmaster Windows": {
+      "main": [
+        [
+          {
+            "node": "Score Concerts",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "TicketMaster Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait Between Ticketmaster Requests": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Ticketmaster Windows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compact Ticketmaster Events": {
+      "main": [
+        [
+          {
+            "node": "Match Concerts to Artists",
             "type": "main",
             "index": 0
           }

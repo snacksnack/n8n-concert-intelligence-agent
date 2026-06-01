@@ -116,11 +116,17 @@ Artist names are normalized (lowercased, diacritics stripped, featured-artist su
 
 ### 2. Concert Discovery
 
-A single Ticketmaster API call fetches up to 200 upcoming music events within **50 miles of Downtown Brooklyn** over the next **6 months**.
+Ticketmaster requests are split into monthly windows across the next **6 months** within **50 miles of Downtown Brooklyn**, sorted by soonest date first. Each monthly window can fetch up to 5 pages of 200 events, which avoids Ticketmaster's paging-depth limit while still covering crowded NYC date ranges.
 
-Each event is matched against your artist map using normalized name comparison and Levenshtein distance (tolerates up to 2 character edits, capped at 30% of name length). The matcher also identifies whether your artist is the headliner or an opener.
+Ticketmaster rejects deep paging when `page * size >= 1000`. With `size=200`, that means a single broad search can only safely fetch pages `0-4`. A 6-month NYC music search can have far more than 1,000 results, so the workflow narrows each request to a month-sized date window and fetches pages `0-4` for each window instead of trying to page through one giant result set.
 
-> Bandsintown integration is stubbed out and disabled pending an API key — it will supplement Ticketmaster once available.
+The Ticketmaster page requests are serialized through `Loop Over Ticketmaster Windows` and `Wait Between Ticketmaster Requests`, currently waiting 2 seconds between requests. This avoids n8n Cloud firing every monthly page request at once. If Ticketmaster still returns rate-limit errors, increase the wait duration before reducing the search window.
+
+After each Ticketmaster response, `Compact Ticketmaster Events` strips the raw API payload down to the fields used for matching and scoring. `Match Concerts to Artists` then runs inside the Ticketmaster loop on that compact page only, so n8n Cloud does not need to load thousands of full Ticketmaster response objects into one Code node. Matched concerts are accumulated in per-execution workflow static data and scored only after the loop finishes. Empty pages and pages with no artist matches emit small loop-control items so n8n still advances to the wait/retry branch; `Score Concerts` ignores those control items and reads only the accumulated real matches.
+
+Each event is matched against your artist map using normalized name comparison, with exact normalized-name matches preferred and only very conservative fuzzy matching allowed for longer names. The production matcher checks every Ticketmaster attraction on an event, so festivals can yield multiple matched artists from one Ticketmaster event. It does not scan arbitrary event text because that produced false positives for artists with common-word names. The matcher also identifies whether your artist is the headliner or an opener when attraction ordering is available.
+
+> Bandsintown integration was tested but is not active: the public events endpoint returned empty event lists even when artist metadata reported upcoming events.
 
 ### 3. Concert Scoring
 
@@ -221,6 +227,30 @@ docker compose up -d
 
 ---
 
+## Matching QA
+
+Use the local QA script to check whether a saved Ticketmaster response would match expected Spotify artists before importing workflow changes into n8n:
+
+```bash
+SPOTIFY_ACCESS_TOKEN=... TICKETMASTER_API_KEY=... \
+  node scripts/fetch-qa-inputs.js
+```
+
+```bash
+node scripts/qa-ticketmaster-matching.js \
+  --artists qa/artists.json \
+  --ticketmaster qa/ticketmaster-response.json \
+  --festival-hints qa/festival-lineup-hints.example.json \
+  --expect Lorde \
+  --expect "Blood Orange"
+```
+
+The fetch script writes `qa/artists.json` and `qa/ticketmaster-response.json`, fetching the same monthly-window Ticketmaster search as production. The Spotify token must be a user OAuth token with `user-top-read` and `user-read-recently-played`. If you prefer manual export, paste the **Build Artist Profile** output to `qa/artists.json` and the raw **TicketMaster Request** output to `qa/ticketmaster-response.json`. The artists file can be a raw array of artist objects or n8n-style items with a `json` wrapper. The Ticketmaster file should be the raw response from the Discovery API.
+
+The script prints matched artists, the exact Ticketmaster event each matched, and every artist with no match sorted by listening recency/rank. By default it mirrors production attraction-only matching. Optional festival hints are QA-only expectations for known festival lineups and are not used by the production workflow. Use `--include-event-text` only as a diagnostic mode for suspected misses, since event-text matching is intentionally too noisy for production. The script exits non-zero if an expected artist was not matched.
+
+---
+
 ## Scoring Thresholds
 
 | Threshold | Action |
@@ -256,4 +286,4 @@ Because the per-run Notion snapshot is read before any writes and the flags are 
 
 ## Planned Improvements
 
-- **Bandsintown integration** — additional event source, pending API key
+- **Configurable search settings** — tune page/window count, radius, and expected festival lineups without editing workflow code

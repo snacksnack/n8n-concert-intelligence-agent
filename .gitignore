@@ -8,6 +8,12 @@ n8n-data/
 !.env.example
 *.key
 *.pem
+.spotify-token-cache
+.venv/
+
+# Local QA exports
+qa/artists.json
+qa/ticketmaster-response.json
 
 # Docker
 docker-compose.override.yaml
