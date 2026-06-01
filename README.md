@@ -7,94 +7,95 @@ An n8n workflow that cross-references your Spotify listening history against upc
 ## Workflow Diagram
 
 ```
-                        ┌─────────────────────┐
-                        │   Schedule Trigger   │
-                        │      (8am daily)     │
-                        └──────────┬──────────┘
-                                   │
-          ┌────────────────────────┼────────────────────────┐
-          │                        │                        │
-          ▼                        ▼                        ▼
- ┌────────────────┐     ┌──────────────────┐    ┌──────────────────┐
- │ Recently       │     │  Top Artists     │    │   Ticketmaster   │
- │ Played Tracks  │     │  Short / Medium  │    │   Events API     │
- │ (Spotify)      │     │  / Long Term     │    │  (50mi radius,   │
- └───────┬────────┘     │  (Spotify)       │    │   next 6 months) │
-         │              └────────┬─────────┘    └────────┬─────────┘
-         │                       │                       │
-         └──────────┬────────────┘                       │
-                    ▼                                     │
-         ┌──────────────────┐                            │
-         │  Merge & Build   │                            │
-         │  Artist Map      │                            │
-         │  (ranks, recency,│                            │
-         │  play counts)    │                            │
-         └────────┬─────────┘                            │
-                  │                                      │
-                  └──────────────────┬───────────────────┘
-                                     ▼
-                          ┌──────────────────┐
-                          │  Match Concerts  │
-                          │  to Artists      │
-                          │  (fuzzy name     │
-                          │   matching)      │
-                          └────────┬─────────┘
-                                   │
-                                   ▼
-                          ┌──────────────────┐
-                          │  Score Concerts  │
-                          │  (recency +      │
-                          │   frequency +    │
-                          │   distance +     │
-                          │   price + venue) │
-                          └────────┬─────────┘
-                                   │
-                    ┌──────────────┘
-                    ▼
-         ┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐
-         │  Setlist Prep    │────▶│  setlist.fm API  │────▶│  Build Prompt    │
-         │  (dedupe, cache  │     │  (last 5 shows)  │     │  (per artist)    │
-         │   check, 30 days)│     └──────────────────┘     └────────┬─────────┘
-         └──────────────────┘                                        │
-                                                                     ▼
-                                                          ┌──────────────────┐
-                                                          │  Claude Sonnet   │
-                                                          │  (2-3 sentence   │
-                                                          │   show preview)  │
-                                                          └────────┬─────────┘
-                                                                   │
-                                                                   ▼
-                                                        ┌──────────────────┐
-                                                        │ Attach Previews  │
-                                                        │ to scored events │
-                                                        └────────┬─────────┘
-                                                                 ▼
-                                                        ┌──────────────────┐
-                                                        │ Get Notion Pages │
-                                                        │ (existing rows = │
-                                                        │  de-dupe source) │
-                                                        └────────┬─────────┘
-                              ┌──────────────────────────────────┼──────────────────────────────┐
-                              ▼                                  ▼                              ▼
-                   ┌──────────────────┐              ┌──────────────────┐           ┌──────────────────┐
-                   │  Filter & De-dupe│              │  Calendar Prep   │           │   Notion Prep    │
-                   │  (score ≥ 40,    │              │  (score ≥ 60,    │           │  (all events;    │
-                   │   not yet        │              │   not yet on     │           │   tag create/    │
-                   │   alerted)       │              │   calendar)      │           │   update)        │
-                   └────────┬─────────┘              └────────┬─────────┘           └────────┬─────────┘
-                            ▼                                 ▼                              ▼
-                   ┌──────────────────┐             ┌──────────────────┐          ┌──────────────────┐
-                   │  Gmail Alert     │             │  Google Calendar │          │ Route Create vs  │
-                   │  (HTML digest)   │             │  Event           │          │ Update           │
-                   └──────────────────┘             └──────────────────┘          └───┬──────────┬───┘
-                                                                                 new │          │ existing
-                                                                                     ▼          ▼
-                                                                            ┌──────────┐  ┌──────────┐
-                                                                            │  Create  │  │  Update  │
-                                                                            │  Notion  │  │  Notion  │
-                                                                            │  page    │  │  page    │
-                                                                            └──────────┘  └──────────┘
+                              ┌──────────────────────┐
+                              │   Schedule Trigger    │
+                              │      (8am daily)      │
+                              └───────────┬───────────┘
+        ┌───────────────────────────┬─────┴─────┬───────────────────────────────┐
+        │ (Spotify, parallel)       │           │                               │
+        ▼                           ▼           ▼                               ▼
+┌────────────────┐  ┌────────────────┐  ┌────────────────┐      ┌────────────────────────────┐
+│ Recently       │  │ Fave Artist    │  │ Fave Artist    │      │ Build Ticketmaster          │
+│ Played         │  │ Short / Medium │  │ Long Term      │      │ Search Windows              │
+│ (Spotify)      │  │ (Spotify)      │  │ (Spotify)      │      │ (6 monthly date windows)    │
+└───────┬────────┘  └───────┬────────┘  └───────┬────────┘      └──────────────┬──────────────┘
+        └───────────────────┼───────────────────┘                             ▼
+                            ▼                            ┌────────────────────────────────────┐
+                  ┌──────────────────┐            ┌────▶ │ Loop Over Ticketmaster Windows       │──┐
+                  │ Merge Spotify    │            │      └──────────────┬───────────────────────┘  │ done
+                  │ Data             │            │            loop     ▼                           │
+                  └────────┬─────────┘            │      ┌──────────────────┐                       │
+                           ▼                      │      │ TicketMaster     │                       │
+                  ┌──────────────────┐            │      │ Request          │                       │
+                  │ Build Artist     │            │      └────────┬─────────┘                       │
+                  │ Profile          │ ┄ ref ┄┐   │               ▼                                 │
+                  │ (ranks, recency, │        ┊   │      ┌──────────────────┐                       │
+                  │  play counts)    │        ┊   │      │ Compact TM Events│                       │
+                  └──────────────────┘        ┊   │      │ (strip payload)  │                       │
+                                              ┊   │      └────────┬─────────┘                       │
+                                              ┊   │               ▼                                 │
+                                              ┊   │      ┌──────────────────┐                       │
+                                              ┗┄┄┄┼┄┄┄┄▶ │ Match Concerts   │                       │
+                                          (matches │     │ to Artists       │                       │
+                                          per page)│     │ (fuzzy, per page)│                       │
+                                                   │     └────────┬─────────┘                       │
+                                                   │              ▼                                 │
+                                                   │     ┌──────────────────┐                       │
+                                                   └─────│ Wait Between TM  │                       │
+                                                         │ Requests (2s)    │                       │
+                                                         └──────────────────┘                       │
+                                                                                                    ▼
+                                                                                    ┌──────────────────┐
+                                                                                    │ Score Concerts   │
+                                                                                    │ (recency + freq +│
+                                                                                    │  distance +      │
+                                                                                    │  price + venue)  │
+                                                                                    └────────┬─────────┘
+                                                                                             ▼
+       ┌──────────────────┐        ┌──────────────────┐        ┌──────────────────┐
+       │ Setlist Prep     │───────▶│ setlist.fm       │───────▶│ Build Prompt     │
+       │ (dedupe, 30-day  │        │ Request          │        │ (per artist)     │
+       │  cache)          │        │ (last 5 shows)   │        └────────┬─────────┘
+       └──────────────────┘        └──────────────────┘                 ▼
+                                                              ┌──────────────────┐
+                                                              │ Claude Request   │
+                                                              │ (2-3 sentence    │
+                                                              │  show preview)   │
+                                                              └────────┬─────────┘
+                                                                       ▼
+                                                              ┌──────────────────┐
+                                                              │ Attach Previews  │
+                                                              │ to scored events │
+                                                              └────────┬─────────┘
+                                                                       ▼
+                                                              ┌──────────────────┐
+                                                              │ Get Notion Pages │
+                                                              │ (existing rows = │
+                                                              │  de-dupe source) │
+                                                              └────────┬─────────┘
+            ┌─────────────────────────────────────────────────────────┼──────────────────────────────┐
+            ▼                                                          ▼                              ▼
+   ┌──────────────────┐                                     ┌──────────────────┐           ┌──────────────────┐
+   │ Filter & De-dupe │                                     │ Calendar Prep    │           │ Notion Prep      │
+   │ (score ≥ 40,     │                                     │ (score ≥ 60,     │           │ (all events;     │
+   │  not yet alerted)│                                     │  not yet on      │           │  tag create/     │
+   └────────┬─────────┘                                     │  calendar)       │           │  update)         │
+            ▼                                                └────────┬─────────┘           └────────┬─────────┘
+   ┌──────────────────┐                                              ▼                              ▼
+   │ Has New Alerts?  │                                     ┌──────────────────┐           ┌──────────────────┐
+   │ (IF)             │                                     │ Create an event  │           │ Route Create vs  │
+   └────────┬─────────┘                                     │ (Google Calendar)│           │ Update (IF)      │
+            ▼                                                └──────────────────┘           └───┬──────────┬───┘
+   ┌──────────────────┐                                                                    new │          │ existing
+   │ Send Alert Email │                                                                        ▼          ▼
+   │ (Gmail digest)   │                                                                 ┌──────────┐ ┌──────────┐
+   └──────────────────┘                                                                 │ Create a │ │ Update a │
+                                                                                        │ database │ │ database │
+                                                                                        │ page     │ │ page     │
+                                                                                        └──────────┘ └──────────┘
 ```
+
+> Matching runs **inside** the Ticketmaster loop: each page is compacted and matched against the `Build Artist Profile` output (read by reference) before the workflow waits and fetches the next window. Matches accumulate in per-execution static data; `Score Concerts` runs once after the loop finishes.
 
 ---
 
@@ -278,9 +279,18 @@ Because the per-run Notion snapshot is read before any writes and the flags are 
 .
 ├── docker-compose.yaml
 ├── README.md
+├── scripts/
+│   ├── fetch-qa-inputs.js            # pulls live Spotify + Ticketmaster into qa/
+│   └── qa-ticketmaster-matching.js   # offline matcher mirroring production
+├── qa/
+│   ├── festival-lineup-hints.example.json   # QA-only festival lineup expectations
+│   ├── artists.json                         # Build Artist Profile export (gitignored)
+│   └── ticketmaster-response.json           # raw TM Discovery response (gitignored)
 └── workflows/
     └── concert-intelligence-agent.json
 ```
+
+`scripts/` holds the local matching QA harness (see [Matching QA](#matching-qa)). `qa/` holds its inputs/fixtures: only `festival-lineup-hints.example.json` is committed — `artists.json` and `ticketmaster-response.json` are local exports and are gitignored.
 
 ---
 
