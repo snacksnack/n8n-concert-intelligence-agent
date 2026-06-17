@@ -33,6 +33,7 @@ function requireEnv(name, value) {
   }
 }
 
+// Shared helper — keep identical across Build Artist Profile, Match Concerts to Artists, and scripts/*.js.
 function normalizeName(name) {
   return String(name || '')
     .toLowerCase()
