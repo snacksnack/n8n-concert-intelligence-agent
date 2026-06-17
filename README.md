@@ -82,12 +82,12 @@ An n8n workflow that cross-references your Spotify listening history against upc
    └────────┬─────────┘                                     │  calendar)       │           │  update)         │
             ▼                                                └────────┬─────────┘           └────────┬─────────┘
    ┌──────────────────┐                                              ▼                              ▼
-   │ Send Digest?     │                                     ┌──────────────────┐           ┌──────────────────┐
+   │ Has New Alerts?  │                                     ┌──────────────────┐           ┌──────────────────┐
    │ (IF)             │                                     │ Create an event  │           │ Route Create vs  │
    └────────┬─────────┘                                     │ (Google Calendar)│           │ Update (IF)      │
             ▼                                                └──────────────────┘           └───┬──────────┬───┘
    ┌──────────────────┐                                                                    new │          │ existing
-   │ Send Digest      │                                                                        ▼          ▼
+   │ Send Alert Email │                                                                        ▼          ▼
    │ (Gmail digest)   │                                                                 ┌──────────┐ ┌──────────┐
    └──────────────────┘                                                                 │ Create a │ │ Update a │
                                                                                         │ database │ │ database │
@@ -96,6 +96,8 @@ An n8n workflow that cross-references your Spotify listening history against upc
 ```
 
 > Matching runs **inside** the Ticketmaster loop: each page is compacted and matched against the `Build Artist Profile` output (read by reference) before the workflow waits and fetches the next window. Matches accumulate in per-execution static data; `Score Concerts` runs once after the loop finishes.
+
+> The diagram simplifies the Notion create branch: after `Create a database page`, newly created pages also pass through `Build Notion Page Body` → `Append Notion Page Body`, which appends the rich scorecard/preview blocks to the page body. Updated pages skip this step.
 
 ---
 
@@ -123,13 +125,13 @@ Ticketmaster requests are split into monthly windows across the next **6 months*
 
 Ticketmaster rejects deep paging when `page * size >= 1000`. With `size=200`, that means a single broad search can only safely fetch pages `0-4`. A 6-month NYC music search can have far more than 1,000 results, so the workflow narrows each request to a month-sized date window and fetches pages `0-4` for each window instead of trying to page through one giant result set.
 
-The Ticketmaster page requests are serialized through `Loop Over Ticketmaster Windows` and `Wait Between Ticketmaster Requests`, currently waiting 2 seconds between requests. This avoids n8n Cloud firing every monthly page request at once. If Ticketmaster still returns rate-limit errors, increase the wait duration before reducing the search window.
+The Ticketmaster page requests are serialized through `Loop Over Ticketmaster Windows` and `Wait Between Ticketmaster Requests`, currently waiting 2 seconds between requests. This avoids n8n Cloud firing every monthly page request at once. `TicketMaster Request` also retries up to 3 times (5 seconds apart) on transient failures. If Ticketmaster still returns rate-limit errors, increase the wait duration before reducing the search window.
 
-After each Ticketmaster response, `Compact Ticketmaster Events` strips the raw API payload down to the fields used for matching and scoring. `Match Concerts to Artists` then runs inside the Ticketmaster loop on that compact page only, so n8n Cloud does not need to load thousands of full Ticketmaster response objects into one Code node. Matched concerts are accumulated in per-execution workflow static data and scored only after the loop finishes. Empty pages and pages with no artist matches emit small loop-control items so n8n still advances to the wait/retry branch; `Score Concerts` ignores those control items and reads only the accumulated real matches.
+After each Ticketmaster response, `Compact Ticketmaster Events` strips the raw API payload down to the fields used for matching and scoring. `Match Concerts to Artists` then runs inside the Ticketmaster loop on that compact page only, so n8n Cloud does not need to load thousands of full Ticketmaster response objects into one Code node. Matched concerts are accumulated in per-execution workflow static data and scored only after the loop finishes. Empty pages, pages with no artist matches, and failed page requests all emit small loop-control items so n8n still advances to the wait/retry branch; `Score Concerts` ignores those control items and reads only the accumulated real matches. Because `TicketMaster Request` runs with `ignoreResponseCode`, `Compact Ticketmaster Events` inspects each response and tags rate-limit/error pages (`reason: 'ticketmaster_error'`) instead of mistaking them for empty windows; those failures are logged and counted, and `Score Concerts` emits a warning when any window failed so a degraded run is visible rather than silently incomplete.
 
 Each event is matched against your artist map using normalized name comparison, with exact normalized-name matches preferred and only very conservative fuzzy matching allowed for longer names. The production matcher checks every Ticketmaster attraction on an event, so festivals can yield multiple matched artists from one Ticketmaster event. It does not scan arbitrary event text because that produced false positives for artists with common-word names. The matcher also identifies whether your artist is the headliner or an opener when attraction ordering is available.
 
-> Bandsintown integration was tested but is not active: the public events endpoint returned empty event lists even when artist metadata reported upcoming events.
+> Bandsintown integration was tested and removed: the public events endpoint returned empty event lists even when artist metadata reported upcoming events.
 
 ### 3. Concert Scoring
 
@@ -281,6 +283,7 @@ Because the per-run Notion snapshot is read before any writes and the flags are 
 .
 ├── docker-compose.yaml
 ├── README.md
+├── LOGGING-SETUP.md                      # one-time setup for the run_log Data Table
 ├── scripts/
 │   ├── fetch-qa-inputs.js            # pulls live Spotify + Ticketmaster into qa/
 │   └── qa-ticketmaster-matching.js   # offline matcher mirroring production
@@ -293,6 +296,14 @@ Because the per-run Notion snapshot is read before any writes and the flags are 
 ```
 
 `scripts/` holds the local matching QA harness (see [Matching QA](#matching-qa)). `qa/` holds its inputs/fixtures: only `festival-lineup-hints.example.json` is committed — `artists.json` and `ticketmaster-response.json` are local exports and are gitignored.
+
+---
+
+## Logging
+
+The workflow writes an **append-only audit log** to an n8n Data Table called `run_log` — one `run_summary` row per successful run (artists, Ticketmaster requests, failed windows, match counts by score band, setlist fetches, Claude failures) and one `errored` row per failed run (error detail + failing node). The writer nodes (`Log — Run Summary`, `Log — Errored`) are best-effort: they retry and continue on error, so logging can never block a run. Code nodes also emit `[Node Name]` `console.log` lines, but those are dev-only — the `run_log` table is the durable record.
+
+Data Table columns are created in the n8n UI, so there's a short one-time setup (create the table, point the two log nodes at it) before the log starts populating. See **[LOGGING-SETUP.md](LOGGING-SETUP.md)**.
 
 ---
 
