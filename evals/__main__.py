@@ -1,8 +1,9 @@
 """`python -m evals` — the billed half (RC1-258).
 
 Layer 1 is `pytest` and needs no key. This is layer 2: it builds each fixture's
-prompt from the committed builder and calls the model. Exit codes match the
-other repos' harnesses — 0 all passed, 1 a case failed, 2 a case errored.
+prompt from the committed builder and calls the model. The run/record/exit
+plumbing is `agent_evals.runner` (RC1-262); what lives here is this repo's
+subject, its fixtures, and its key.
 """
 
 from __future__ import annotations
@@ -11,45 +12,10 @@ import argparse
 import os
 import sys
 from datetime import UTC, datetime
-from pathlib import Path
 
-from agent_evals.record import RunRecord, RunStore, new_run_id
+from agent_evals.runner import UnknownCase, exit_code, print_result, record_run, select_cases
 
 from evals import fixtures, subject, workflow
-
-RUNS_PATH = Path(os.environ.get("EVAL_RUNS_PATH", "./eval-runs/runs.jsonl"))
-
-
-def _store():
-    """The shared Postgres store when `EVAL_DATABASE_URL` is set, else the
-    local JSONL default (RC1-263).
-
-    Read from the process environment, never `.env` — the credential lives in
-    one place outside every repo. An unreachable store fails the run loudly:
-    a silent fallback to the file would fork the record history.
-    """
-    dsn = os.environ.get("EVAL_DATABASE_URL")
-    if dsn:
-        from agent_evals.sql_store import SqlRunStore
-
-        store = SqlRunStore(dsn)
-        store.ensure_schema()
-        return store
-    return RunStore(RUNS_PATH)
-
-
-def _print(result) -> None:
-    if result.error:
-        print(f"  ERROR {result.case_id}: {result.error}")
-        return
-    status = "pass" if result.passed else "FAIL"
-    print(f"  {status} {result.case_id}  ({result.usage.latency_ms / 1000:.0f}s)")
-    for c in result.characteristics:
-        if c.passed and not c.advisory:
-            continue
-        mark = "~" if c.advisory else "✗"
-        tag = " [advisory]" if c.advisory else ""
-        print(f"    {mark} {c.name}{tag}: {c.detail}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -81,32 +47,20 @@ def main(argv: list[str] | None = None) -> int:
     import anthropic
 
     client = anthropic.Anthropic(api_key=key, timeout=60.0, max_retries=3)
-    cases = subject.CASES
-    if args.case:
-        cases = tuple(c for c in cases if c.id == args.case)
-        if not cases:
-            print(f"no fixture {args.case!r}", file=sys.stderr)
-            return 2
+    try:
+        cases = select_cases(subject.CASES, args.case)
+    except UnknownCase as exc:
+        print(exc, file=sys.stderr)
+        return 2
 
     print(f"{len(cases)} case(s) against {workflow.model()} — this spends money.\n")
     started = datetime.now(UTC)
     results = [subject.run(c, client) for c in cases]
     for r in results:
-        _print(r)
+        print_result(r)
 
-    record = RunRecord(
-        run_id=new_run_id(subject.NAME),
-        subject_version=subject.version(),
-        started_at=started,
-        finished_at=datetime.now(UTC),
-        results=results,
-    )
-    _store().append(record)
-    print(f"\nrun {record.run_id} recorded")
-
-    if any(r.error for r in results):
-        return 2
-    return 0 if all(r.passed for r in results) else 1
+    record_run(subject.version(), started, results)
+    return exit_code(results)
 
 
 if __name__ == "__main__":
