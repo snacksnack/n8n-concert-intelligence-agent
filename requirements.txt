@@ -1,0 +1,12 @@
+# Eval + test dependencies for the committed workflow (RC1-258).
+# The workflow itself runs in n8n Cloud; nothing here is deployed.
+
+pytest>=8
+ruff>=0.7
+
+# Layer 2 only: builds the prompt and calls the Messages API directly.
+anthropic>=0.40
+
+# The shared eval harness. Pinned by tag — if the ruler can move under a run, a
+# changed score no longer says whether the prompt drifted or the measurement did.
+agent-evals @ git+https://github.com/snacksnack/agent-evals@v0.1.2

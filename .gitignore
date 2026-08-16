@@ -26,3 +26,11 @@ docker-compose.override.yaml
 .idea/
 *.swp
 *.swo
+
+# Python / evals (RC1-258)
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+eval-runs/

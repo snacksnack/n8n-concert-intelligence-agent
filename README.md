@@ -4,6 +4,32 @@ An n8n workflow that cross-references your Spotify listening history against upc
 
 ---
 
+
+## How we know the previews are any good
+
+One node calls a model — `Claude Request`, between `Build Prompt` and
+`Attach Previews`. Two layers test it; see
+[`docs/rc1-258-evals.md`](docs/rc1-258-evals.md).
+
+```bash
+pytest                 # layer 1 — free, gates on every push
+python -m evals        # layer 2 — billed, needs ANTHROPIC_API_KEY
+```
+
+**Nothing parses the model's output.** `Attach Previews` writes it straight into
+the email and the Notion page, so every flaw ships verbatim — a preamble reads
+as broken copy, an invented song title is a factual error about a real band.
+That is what layer 2 scores.
+
+**Layer 1 also freezes two assumptions the workflow makes and never states.**
+Previews are matched to artists *by position*, so a reorder or retry in the
+request node would attach a preview to the wrong artist — and it would read
+perfectly. And the `'No preview available.'` fallback is indistinguishable from
+the legitimate "no recent setlist data" result, so an API failure and a genuine
+absence of data look the same to a reader. Neither is fixed here; both are now
+asserted, so a change is visible.
+
+
 ## Workflow Diagram
 
 ```
