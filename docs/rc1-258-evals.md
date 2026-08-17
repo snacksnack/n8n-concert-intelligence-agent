@@ -56,6 +56,16 @@ and the Notion page — so every flaw ships. That decides what is scored: no
 preamble, no invented song titles, 2-3 sentences, and the opening-set note when
 the artist is supporting.
 
+The run/record/exit plumbing is the shared
+[`agent-evals`](https://github.com/snacksnack/agent-evals) harness (RC1-262);
+what lives here is only this repo's subject and fixtures. `ANTHROPIC_API_KEY`
+is read from the process environment — this repo's eval path reads no `.env`.
+Records land in the shared store when `EVAL_DATABASE_URL` is set (else a local
+gitignored `eval-runs/runs.jsonl`), and render to the
+[quality trend page](https://snacksnack.github.io/agent-evals/) — see the
+library's
+[runbook](https://github.com/snacksnack/agent-evals/blob/main/docs/measuring.md).
+
 Two false positives shaped the song check, both found by running it:
 
 | Flagged | Why it was wrong |
