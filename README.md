@@ -16,6 +16,13 @@ pytest                 # layer 1 — free, gates on every push
 python -m evals        # layer 2 — billed, needs ANTHROPIC_API_KEY
 ```
 
+Layer 2 runs on the shared harness
+[`agent-evals`](https://github.com/snacksnack/agent-evals) (pinned by tag) —
+its README is the methodology. Runs publish to the shared
+[quality trend page](https://snacksnack.github.io/agent-evals/); keys, the
+record store and the publish step are the library's
+[runbook](https://github.com/snacksnack/agent-evals/blob/main/docs/measuring.md).
+
 **Nothing parses the model's output.** `Attach Previews` writes it straight into
 the email and the Notion page, so every flaw ships verbatim — a preamble reads
 as broken copy, an invented song title is a factual error about a real band.
