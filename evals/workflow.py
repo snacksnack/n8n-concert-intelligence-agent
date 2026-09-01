@@ -198,3 +198,25 @@ def build_preview_prompt(
             "formatted": format_setlists(shows),
         },
     )
+
+
+# --- the LLM Observability side branch (RC1-362) ---------------------------
+#
+# `Build LLM Spans` and `Report LLM Spans` hang off `Claude Request` as a second
+# output, parallel to `Attach Previews`. Nothing on the digest path reads them,
+# and both continue on error, so a Datadog outage cannot change the email.
+
+SPAN_BUILDER_NODE = "Build LLM Spans"
+SPAN_REPORT_NODE = "Report LLM Spans"
+
+
+@cache
+def span_builder_code() -> str:
+    return str(node(SPAN_BUILDER_NODE)["parameters"]["jsCode"])
+
+
+@cache
+def outputs_of(name: str) -> list[str]:
+    """Names of the nodes wired to `name`'s first main output, in order."""
+    targets = workflow().get("connections", {}).get(name, {}).get("main", [[]])[0]
+    return [t["node"] for t in targets]

@@ -538,7 +538,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "// Run Once for Each Item mode\nconst sfData = $json; // the Setlist.fm response for THIS artist\nconst artist = $('Setlist Prep').all()[$itemIndex].json;\n\nconst setlists = (sfData.setlist || []).slice(0, 5);\n\nlet prompt;\nif (setlists.length === 0) {\n  prompt = `Write exactly this sentence and nothing else: \"No recent setlist data available for ${artist.artist_name}.\"`;\n} else {\n  const formatted = setlists.map((sl, i) => {\n    const date = sl.eventDate || 'unknown date';\n    const venue = sl.venue?.name || 'unknown venue';\n    const sets = sl.sets?.set || [];\n    const songs = sets.map(s => {\n      const setName = s.name || (s.encore ? 'Encore' : 'Main Set');\n      return `  ${setName}: ${(s.song || []).map(x => x.name).filter(Boolean).join(', ')}`;\n    }).join('\\n');\n    return `Show ${i + 1} (${date}, ${venue}):\\n${songs}`;\n  }).join('\\n\\n');\n\n  const openerNote = artist.is_opener\n    ? `\\nNote: this artist is opening for ${artist.headliner_name}, so expect a shorter set (30-45 min).`\n    : '';\n\n  prompt = `You are a concert preview writer. Given these recent setlists for ${artist.artist_name}, write a 2-3 sentence preview of what to expect at their upcoming show. Focus on set length, key songs, and notable production. Be specific about song names. Concise and enthusiastic, like a knowledgeable friend. Output ONLY the preview itself with no preamble — start directly with the description.${openerNote}\\n\\nRecent setlists:\\n${formatted}`;\n}\n\nreturn { json: { artist_id: artist.artist_id, artist_name: artist.artist_name, prompt } };"
+        "jsCode": "// Run Once for Each Item mode\nconst sfData = $json; // the Setlist.fm response for THIS artist\nconst artist = $('Setlist Prep').all()[$itemIndex].json;\n\nconst setlists = (sfData.setlist || []).slice(0, 5);\n\nlet prompt;\nif (setlists.length === 0) {\n  prompt = `Write exactly this sentence and nothing else: \"No recent setlist data available for ${artist.artist_name}.\"`;\n} else {\n  const formatted = setlists.map((sl, i) => {\n    const date = sl.eventDate || 'unknown date';\n    const venue = sl.venue?.name || 'unknown venue';\n    const sets = sl.sets?.set || [];\n    const songs = sets.map(s => {\n      const setName = s.name || (s.encore ? 'Encore' : 'Main Set');\n      return `  ${setName}: ${(s.song || []).map(x => x.name).filter(Boolean).join(', ')}`;\n    }).join('\\n');\n    return `Show ${i + 1} (${date}, ${venue}):\\n${songs}`;\n  }).join('\\n\\n');\n\n  const openerNote = artist.is_opener\n    ? `\\nNote: this artist is opening for ${artist.headliner_name}, so expect a shorter set (30-45 min).`\n    : '';\n\n  prompt = `You are a concert preview writer. Given these recent setlists for ${artist.artist_name}, write a 2-3 sentence preview of what to expect at their upcoming show. Focus on set length, key songs, and notable production. Be specific about song names. Concise and enthusiastic, like a knowledgeable friend. Output ONLY the preview itself with no preamble — start directly with the description.${openerNote}\\n\\nRecent setlists:\\n${formatted}`;\n}\n\n// requestedAt feeds the LLM Observability span (RC1-362); nothing else reads it.\nreturn { json: { artist_id: artist.artist_id, artist_name: artist.artist_name, prompt, requestedAt: Date.now() } };"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -598,6 +598,55 @@
       ],
       "id": "da93eb66-e7a1-4e7d-a6ee-9ac2d6ae2c33",
       "name": "Attach Previews"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Run Once for All Items — RC1-362.\n// One Datadog LLM Observability trace per run: a workflow root span and one\n// `llm` child span per artist preview. Reads Build Prompt (prompt, artist,\n// requestedAt) and Claude Request's raw response (content, usage, model) by\n// position — the same positional contract Attach Previews relies on.\n//\n// n8n runs a node over all its items before the next node starts, so the only\n// timestamps available are \"prompts built\" and \"now\". Per-call latency is not\n// observable from here; each llm span gets an equal share of the elapsed time\n// and is tagged latency:amortized so nobody reads it as measured. Tokens,\n// cost, model and content are exact.\nconst prompts = $('Build Prompt').all();\nconst responses = $input.all();\nconst now = Date.now();\nconst digits = n => Array.from({ length: n }, () => Math.floor(Math.random() * 10)).join('');\nconst newId = () => String(1 + Math.floor(Math.random() * 9)) + digits(18);\n\nconst count = Math.max(prompts.length, 1);\nconst firstAt = Math.min(...prompts.map(p => p.json.requestedAt || now));\nconst elapsedMs = Math.max(now - firstAt, 1);\nconst shareNs = Math.floor((elapsedMs * 1e6) / count);\n\nconst traceId = newId();\nconst rootId = newId();\nconst executionId = String($execution.id || '');\nconst runTags = [\n  'service:concert-intelligence',\n  'env:prod',\n  `execution_id:${executionId}`,\n  'latency:amortized',\n];\n\nlet ok = 0;\nlet failed = 0;\nconst spans = [];\n\nfor (let i = 0; i < prompts.length; i++) {\n  const p = prompts[i].json;\n  const r = responses[i]?.json || {};\n  const text = r.content?.[0]?.text;\n  const errored = !text;\n  if (errored) failed++; else ok++;\n  const startNs = (p.requestedAt || firstAt) * 1e6 + i * shareNs;\n  const span = {\n    name: 'setlist-preview',\n    span_id: newId(),\n    trace_id: traceId,\n    parent_id: rootId,\n    start_ns: startNs,\n    duration: shareNs,\n    status: errored ? 'error' : 'ok',\n    tags: [`artist:${p.artist_name}`, `artist_id:${p.artist_id}`],\n    meta: {\n      kind: 'llm',\n      model_name: r.model || 'claude',\n      model_provider: 'anthropic',\n      input: { messages: [{ role: 'user', content: p.prompt }] },\n      output: { messages: [{ role: 'assistant', content: text || '' }] },\n    },\n    metrics: {\n      input_tokens: Number(r.usage?.input_tokens || 0),\n      output_tokens: Number(r.usage?.output_tokens || 0),\n      total_tokens: Number(r.usage?.input_tokens || 0) + Number(r.usage?.output_tokens || 0),\n    },\n  };\n  if (errored) {\n    span.meta.error = {\n      type: 'claude_request',\n      message: typeof r.error === 'string' ? r.error : JSON.stringify(r.error || 'no content in response'),\n    };\n  }\n  spans.push(span);\n}\n\nspans.unshift({\n  name: 'setlist-previews',\n  span_id: rootId,\n  trace_id: traceId,\n  parent_id: 'undefined',\n  start_ns: firstAt * 1e6,\n  duration: elapsedMs * 1e6,\n  status: failed > 0 && ok === 0 ? 'error' : 'ok',\n  meta: {\n    kind: 'workflow',\n    input: { value: `${prompts.length} artists` },\n    output: { value: `${ok} previews, ${failed} failed` },\n  },\n});\n\nreturn [{ json: { data: { type: 'span', attributes: { ml_app: 'concert-intelligence', tags: runTags, spans } } } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7456,
+        3500
+      ],
+      "id": "llmobs-node-0001",
+      "name": "Build LLM Spans",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.datadoghq.com/api/intake/llm-obs/v1/trace/spans",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "DD-API-KEY",
+              "value": "={{ $vars.DD_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        7680,
+        3500
+      ],
+      "id": "llmobs-node-0002",
+      "name": "Report LLM Spans",
+      "onError": "continueRegularOutput",
+      "notes": "RC1-362: best-effort. Datadog LLM Observability agentless intake; a failure here never touches the digest."
     },
     {
       "parameters": {
@@ -1530,6 +1579,11 @@
             "node": "Attach Previews",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "Build LLM Spans",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -1700,6 +1754,17 @@
         [
           {
             "node": "Log — Errored",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build LLM Spans": {
+      "main": [
+        [
+          {
+            "node": "Report LLM Spans",
             "type": "main",
             "index": 0
           }
