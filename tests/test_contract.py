@@ -168,3 +168,56 @@ def test_the_builder_caps_the_setlists_it_sends():
     assert re.search(r"\.slice\(0,\s*5\)", workflow.builder_code()), (
         "the setlist cap was removed; prompt size is now unbounded"
     )
+
+
+# --- the LLM Observability side branch stays off the digest path (RC1-362) --
+
+
+def test_the_span_branch_hangs_off_the_request_and_not_in_front_of_the_consumer():
+    """`Attach Previews` must still read `Claude Request` directly.
+
+    The span nodes are a second output of the request node, not a hop in the
+    chain: putting an HTTP node between the request and the consumer would
+    replace each item's JSON with Datadog's response, and the index walk in
+    `Attach Previews` would then attach 'No preview available.' to every artist
+    — perfectly formatted, silently wrong.
+    """
+    targets = workflow.outputs_of(workflow.REQUEST_NODE)
+    assert targets[0] == workflow.CONSUMER_NODE, "Attach Previews is no longer first"
+    assert workflow.SPAN_BUILDER_NODE in targets
+    assert workflow.outputs_of(workflow.SPAN_BUILDER_NODE) == [workflow.SPAN_REPORT_NODE]
+    assert workflow.outputs_of(workflow.SPAN_REPORT_NODE) == [], (
+        "the report node feeds something downstream; it must dead-end"
+    )
+
+
+def test_the_span_branch_can_never_block_the_run():
+    for name in (workflow.SPAN_BUILDER_NODE, workflow.SPAN_REPORT_NODE):
+        assert workflow.node(name).get("onError") == "continueRegularOutput", (
+            f"{name} would fail the run on a Datadog error"
+        )
+
+
+def test_the_report_node_posts_to_the_llm_obs_intake_with_the_key_from_vars():
+    params = workflow.node(workflow.SPAN_REPORT_NODE)["parameters"]
+    assert params["url"].endswith("/api/intake/llm-obs/v1/trace/spans")
+    headers = {h["name"]: h["value"] for h in params["headerParameters"]["parameters"]}
+    assert headers["DD-API-KEY"] == "={{ $vars.DD_API_KEY }}"
+    assert params["jsonBody"] == "={{ JSON.stringify($json) }}"
+
+
+def test_the_span_builder_reads_the_same_positional_pair_as_the_consumer():
+    """Prompt i, response i — the same assumption `Attach Previews` makes, so
+    a reorder that misattributes a preview misattributes the span the same way
+    and the two stay comparable."""
+    code = workflow.span_builder_code()
+    assert "$('Build Prompt').all()" in code
+    assert "responses[i]" in code and "prompts[i]" in code
+    assert "kind: 'llm'" in code
+    assert "ml_app: 'concert-intelligence'" in code
+    assert "usage?.input_tokens" in code and "usage?.output_tokens" in code
+    assert "latency:amortized" in code, "the amortised-latency tag is the honesty marker"
+
+
+def test_the_builder_stamps_the_time_the_span_needs():
+    assert "requestedAt: Date.now()" in workflow.builder_code()

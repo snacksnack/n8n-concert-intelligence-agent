@@ -239,6 +239,7 @@ Configure the following in n8n:
 | `$vars.TICKETMASTER_API_KEY` | Concert discovery |
 | `$vars.SETLIST_FM_API_KEY` | Setlist fetching |
 | `$vars.ANTHROPIC_API_KEY` | Claude preview generation |
+| `$vars.DD_API_KEY` | Datadog LLM Observability (optional; the run succeeds without it) |
 | Spotify OAuth2 (`DYX2e4Iy4Laa0AiF`) | Spotify top artists + recently played |
 | Gmail OAuth2 | Email digest |
 | Google Calendar OAuth2 | Auto calendar events |
@@ -252,7 +253,7 @@ The workflow is hardcoded to **Downtown Brooklyn** (`40.6928, -73.9903`) as the 
 
 1. Import `workflows/concert-intelligence-agent.json` into your n8n instance
 2. Configure all credentials
-3. Set `TICKETMASTER_API_KEY`, `SETLIST_FM_API_KEY`, and `ANTHROPIC_API_KEY` as n8n variables
+3. Set `TICKETMASTER_API_KEY`, `SETLIST_FM_API_KEY`, `ANTHROPIC_API_KEY`, and optionally `DD_API_KEY` as n8n variables
 4. Activate the workflow — it will run daily at 8am
 
 ### Docker (optional)
@@ -337,6 +338,12 @@ Because the per-run Notion snapshot is read before any writes and the flags are 
 The workflow writes an **append-only audit log** to an n8n Data Table called `run_log` — one `run_summary` row per successful run (artists, Ticketmaster requests, failed windows, match counts by score band, setlist fetches, Claude failures) and one `errored` row per failed run (error detail + failing node). The writer nodes (`Log — Run Summary`, `Log — Errored`) are best-effort: they retry and continue on error, so logging can never block a run. Code nodes also emit `[Node Name]` `console.log` lines, but those are dev-only — the `run_log` table is the durable record.
 
 Data Table columns are created in the n8n UI, so there's a short one-time setup (create the table, point the two log nodes at it) before the log starts populating. See **[LOGGING-SETUP.md](LOGGING-SETUP.md)**.
+
+### LLM Observability (RC1-362)
+
+Every run also reports its Claude calls to Datadog LLM Observability under ml_app `concert-intelligence`: one trace per morning, a workflow root span and one `llm` span per artist preview with the prompt, the preview, the model, and exact token counts from the API's `usage` block. `Build LLM Spans` (a Code node) assembles the payload from `Build Prompt` and `Claude Request` by position — the same pairing `Attach Previews` relies on — and `Report LLM Spans` posts it to the agentless intake with `$vars.DD_API_KEY`. Both hang off `Claude Request` as a side branch and continue on error, so Datadog can never block the digest; without the variable the post fails quietly and nothing else changes.
+
+One honest caveat: n8n runs a node over every item before the next node starts, so per-call latency is not observable. Each `llm` span gets an equal share of the elapsed time and carries the tag `latency:amortized`. Tokens, cost, and content are exact; latency is not.
 
 ---
 
