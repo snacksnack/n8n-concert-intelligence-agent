@@ -350,3 +350,4 @@ One honest caveat: n8n runs a node over every item before the next node starts, 
 ## Planned Improvements
 
 - **Configurable search settings** — tune page/window count, radius, and expected festival lineups without editing workflow code
+# RC1-423 interruption test
