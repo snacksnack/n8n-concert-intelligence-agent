@@ -6,7 +6,7 @@
         "rule": {
           "interval": [
             {
-              "triggerAtHour": 8
+              "field": "minutes", "minutesInterval": 2
             }
           ]
         }
