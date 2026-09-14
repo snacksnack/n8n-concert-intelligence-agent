@@ -345,6 +345,8 @@ Every run also reports its Claude calls to Datadog LLM Observability under ml_ap
 
 One honest caveat: n8n runs a node over every item before the next node starts, so per-call latency is not observable. Each `llm` span gets an equal share of the elapsed time and carries the tag `latency:amortized`. Tokens, cost, and content are exact; latency is not.
 
+The payload also carries a `version:` tag. That is not decoration: Datadog's intake only indexes a root span's own tags (the run's `error:0|1`, which the fleet reliability SLO reads) when the trace-level tags include a version, so a payload without one silently loses the run from `ml_obs.trace{error}` (RC1-441). ddtrace sends it automatically; a hand-built payload has to.
+
 ---
 
 ## Planned Improvements

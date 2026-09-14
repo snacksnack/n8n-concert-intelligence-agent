@@ -217,6 +217,9 @@ def test_the_span_builder_reads_the_same_positional_pair_as_the_consumer():
     assert "ml_app: 'concert-intelligence'" in code
     assert "usage?.input_tokens" in code and "usage?.output_tokens" in code
     assert "latency:amortized" in code, "the amortised-latency tag is the honesty marker"
+    assert re.search(r"'version:[^']+'", code), (
+        "RC1-441: without a version tag the intake drops the root span's error tag"
+    )
 
 
 def test_the_builder_stamps_the_time_the_span_needs():
