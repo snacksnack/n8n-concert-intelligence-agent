@@ -49,6 +49,9 @@ Design notes are in `README.md`; the eval design is `docs/rc1-258-evals.md`.
   1,000 results), `ignoreResponseCode` on the request with error pages tagged
   `reason: 'ticketmaster_error'` and counted rather than read as empty windows.
   Do not collapse the loop or page deeper.
+- **The LLM Obs payload keeps its `version:` tag.** `Build LLM Spans` puts one in
+  `runTags`; without it the intake drops the root span's `error` tag and the fleet
+  SLO stops seeing the run (RC1-441). `test_contract.py` asserts it.
 - **Bounded prompts.** `Build Prompt` sends at most five setlists
   (`.slice(0, 5)`); `max_tokens` on `Claude Request` stays ≥ 150.
 - **Duplicated JavaScript is checked, not trusted.** Where Python mirrors a
