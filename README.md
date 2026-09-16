@@ -85,19 +85,25 @@ asserted, so a change is visible.
                                                                                     │  price + venue)  │
                                                                                     └────────┬─────────┘
                                                                                              ▼
-       ┌──────────────────┐        ┌──────────────────┐        ┌──────────────────┐
-       │ Setlist Prep     │───────▶│ setlist.fm       │───────▶│ Build Prompt     │
-       │ (dedupe, 30-day  │        │ Request          │        │ (per artist)     │
-       │  cache)          │        │ (last 5 shows)   │        └────────┬─────────┘
-       └──────────────────┘        └──────────────────┘                 ▼
-                                                              ┌──────────────────┐
-                                                              │ Claude Request   │
-                                                              │ (2-3 sentence    │
-                                                              │  show preview)   │
-                                                              └────────┬─────────┘
-                                                                       ▼
-                                                              ┌──────────────────┐
-                                                              │ Attach Previews  │
+       ┌──────────────────┐        ┌──────────────────┐       ┌──────────────────┐
+       │ Setlist Prep     │───────▶│ Previews Needed? │──yes─▶│ setlist.fm       │
+       │ (dedupe, 30-day  │        │ (IF: any artist  │       │ Request          │
+       │  cache)          │        │  uncached?)      │       │ (last 5 shows)   │
+       └──────────────────┘        └────────┬─────────┘       └────────┬─────────┘
+                                         no │                          ▼
+                                            │                 ┌──────────────────┐
+                                            │                 │ Build Prompt     │
+                                            │                 │ (per artist)     │
+                                            │                 └────────┬─────────┘
+                                            │                          ▼
+                                            │                 ┌──────────────────┐
+                                            │                 │ Claude Request   │
+                                            │                 │ (2-3 sentence    │
+                                            │                 │  show preview)   │
+                                            │                 └────────┬─────────┘
+                                            │                          ▼
+                                            │                 ┌──────────────────┐
+                                            └────────────────▶│ Attach Previews  │
                                                               │ to scored events │
                                                               └────────┬─────────┘
                                                                        ▼
@@ -200,6 +206,8 @@ For each matched artist (deduplicated, with a 30-day cache), the workflow:
 4. Caches the result per artist for 30 days
 
 If an artist is opening rather than headlining, the prompt notes the shorter expected set length (30-45 min).
+
+Once the cache is warm, the normal state of a run is **nothing to fetch**, and `Previews Needed?` routes past setlist.fm and Claude entirely — the digest still goes out, assembled from cached previews. That branch has to stay wired to `Attach Previews`, because everything that ships the digest sits behind it. Before RC1-442 `Setlist Prep` simply returned no items on such a run, n8n's `alwaysOutputData` substituted an empty one, and the workflow dutifully asked setlist.fm about `artistName=undefined` and Claude for a preview of an artist called "undefined". It only ever happened on scheduled runs: n8n persists workflow static data on production executions only, so a manual test run never builds up the cache that triggers it.
 
 ### 5. Output
 

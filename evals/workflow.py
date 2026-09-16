@@ -12,13 +12,18 @@ worth extracting.
 `Parse Email Content` in the other repo regex-extracts a shape. Nothing parses
 here. Instead `Attach Previews` does:
 
-    const prompts = $('Build Prompt').all();
-    const claudeOut = $input.all();
+    let prompts = [];
+    try { prompts = $('Build Prompt').all(); } catch (e) { prompts = []; }
+    const claudeOut = prompts.length > 0 ? $input.all() : [];
     for (let i = 0; i < prompts.length; i++) {
       const aid = prompts[i].json.artist_id;
       const text = claudeOut[i]?.json?.content?.[0]?.text || 'No preview available.';
       ...
     }
+
+The `try` is not defensive noise: `Previews Needed?` skips `Build Prompt`
+entirely on a run where every artist's preview is still cached (RC1-442), and
+`$('Build Prompt').all()` throws on an unexecuted node.
 
 **Prompt `i` is assumed to correspond to response `i`.** If the request node
 ever reorders, drops or retries an item, a preview is attached to the wrong
@@ -48,6 +53,9 @@ WORKFLOW_PATH = (
 PROMPT_NODE = "Build Prompt"
 REQUEST_NODE = "Claude Request"
 CONSUMER_NODE = "Attach Previews"
+PREP_NODE = "Setlist Prep"
+GATE_NODE = "Previews Needed?"
+SETLIST_REQUEST_NODE = "Setlist.fm Request"
 
 
 @cache
@@ -74,6 +82,11 @@ def builder_code() -> str:
 @cache
 def consumer_code() -> str:
     return str(node(CONSUMER_NODE)["parameters"]["jsCode"])
+
+
+@cache
+def prep_code() -> str:
+    return str(node(PREP_NODE)["parameters"]["jsCode"])
 
 
 @cache
@@ -220,3 +233,16 @@ def outputs_of(name: str) -> list[str]:
     """Names of the nodes wired to `name`'s first main output, in order."""
     targets = workflow().get("connections", {}).get(name, {}).get("main", [[]])[0]
     return [t["node"] for t in targets]
+
+
+@cache
+def branches_of(name: str) -> tuple[tuple[str, ...], ...]:
+    """Names wired to each of `name`'s main outputs, in branch order.
+
+    `outputs_of` reads the first output only, which is all a Code or httpRequest
+    node has. An IF node's *second* output is the interesting one: for
+    `Previews Needed?` it is the path a fully cached run takes, and nothing
+    would notice if it were left dangling.
+    """
+    main = workflow().get("connections", {}).get(name, {}).get("main", [])
+    return tuple(tuple(t["node"] for t in branch) for branch in main)
