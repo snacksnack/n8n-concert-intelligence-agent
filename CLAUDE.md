@@ -32,9 +32,10 @@ Design notes are in `README.md`; the eval design is `docs/rc1-258-evals.md`.
   OAuth is an n8n credential referenced by id. A literal key or token in a node
   is a blocker.
 - **Node names are an interface.** `evals/workflow.py` and the tests look nodes
-  up by name (`Build Prompt`, `Claude Request`, `Attach Previews`,
-  `Build LLM Spans`, `Report LLM Spans`). Renaming one fails the tests on
-  purpose: update the eval, do not delete the assertion.
+  up by name (`Setlist Prep`, `Previews Needed?`, `Build Prompt`,
+  `Claude Request`, `Attach Previews`, `Build LLM Spans`, `Report LLM Spans`).
+  Renaming one fails the tests on purpose: update the eval, do not delete the
+  assertion.
 - **Two assumptions in `Attach Previews` are frozen, not fixed.** Previews are
   matched to artists by position (prompt *i* ↔ response *i*), and the
   `'No preview available.'` fallback reads like a legitimate result. A change to
@@ -44,6 +45,13 @@ Design notes are in `README.md`; the eval design is `docs/rc1-258-evals.md`.
   sets `onError: continueRegularOutput`. `Attach Previews` stays the request
   node's first output; an HTTP node between them would replace every item's
   JSON with the response and silently misattribute every preview.
+- **A run with nothing to fetch is a normal run.** `Setlist Prep` skips artists
+  whose preview is under 30 days old; once the cache is warm that is usually all
+  of them. It must never return `[]` — `Attach Previews` and the whole digest sit
+  downstream, and `alwaysOutputData` would substitute an empty item that reaches
+  Setlist.fm as `artistName=undefined` (RC1-442). It emits `__noPreviewsNeeded`
+  instead, and `Previews Needed?` routes that past both API calls to
+  `Attach Previews` **and** `Build LLM Spans`, so the run still reports a trace.
 - **Ticketmaster is paged per month and serialized.** `Loop Over Ticketmaster
   Windows` + a 2 s wait, pages 0–4 per window (deeper paging is rejected past
   1,000 results), `ignoreResponseCode` on the request with error pages tagged

@@ -224,3 +224,87 @@ def test_the_span_builder_reads_the_same_positional_pair_as_the_consumer():
 
 def test_the_builder_stamps_the_time_the_span_needs():
     assert "requestedAt: Date.now()" in workflow.builder_code()
+
+
+# --- the empty-cache path (RC1-442) ---------------------------------------
+#
+# `Setlist Prep` skips any artist whose preview is under 30 days old, so once
+# the cache is warm the normal state of a scheduled run is *nothing to fetch*.
+# That path used to be unreachable by design and broken in practice: the node
+# returned `[]`, `alwaysOutputData` substituted one empty item, and the empty
+# item was carried all the way into a Setlist.fm call for `artistName=undefined`
+# and a Claude prompt about an artist called "undefined". It only ever happened
+# on scheduled runs, because n8n persists `$getWorkflowStaticData` writes on
+# production executions only — a manual test run never accumulates the cache
+# that triggers it, which is exactly why it survived so long.
+
+
+def test_setlist_prep_always_emits_at_least_one_item():
+    """The node must not return `[]`.
+
+    Everything that ships the digest — `Attach Previews`, and the Notion,
+    calendar and email nodes behind it — is downstream of this branch. An empty
+    return halts it and sends no digest at all, so "nothing to refresh" has to
+    be an item that says so rather than an absence.
+    """
+    code = workflow.prep_code()
+    assert "artists.length === 0" in code, "the no-work case is no longer handled"
+    assert "__noPreviewsNeeded" in code
+    assert code.rstrip().endswith("return artists;")
+
+
+def test_setlist_prep_refuses_to_queue_a_nameless_artist():
+    assert "!ev.artist_id || !ev.artist_name" in workflow.prep_code()
+
+
+def test_the_gate_tests_the_field_the_setlist_url_interpolates():
+    """The gate is only worth anything while it guards *this* expression."""
+    url = workflow.node(workflow.SETLIST_REQUEST_NODE)["parameters"]["url"]
+    assert "$json.artist_name" in url
+
+    condition = workflow.node(workflow.GATE_NODE)["parameters"]["conditions"]["conditions"][0]
+    assert "$json.artist_name" in condition["leftValue"]
+    assert condition["operator"]["operation"] == "notEmpty"
+
+
+def test_the_gate_sends_a_nameless_item_past_both_api_calls():
+    """True fetches and prompts; false skips straight to the consumer.
+
+    The false branch still has to reach `Attach Previews`, or a fully cached run
+    silently stops after the gate and no digest goes out — the same outage in a
+    different place.
+    """
+    assert workflow.outputs_of(workflow.PREP_NODE) == [workflow.GATE_NODE]
+
+    fetch, skip = workflow.branches_of(workflow.GATE_NODE)
+    assert fetch == (workflow.SETLIST_REQUEST_NODE,)
+    assert workflow.CONSUMER_NODE in skip
+    assert workflow.SPAN_BUILDER_NODE in skip, (
+        "a cached-only run would report no trace at all, and the RC1-407 "
+        "reliability SLO counts runs"
+    )
+
+
+def test_the_consumer_and_span_builder_survive_an_unexecuted_prompt_node():
+    """Both read `Build Prompt` by name, and on the skip branch it never ran."""
+    for name, code in (
+        (workflow.CONSUMER_NODE, workflow.consumer_code()),
+        (workflow.SPAN_BUILDER_NODE, workflow.span_builder_code()),
+    ):
+        assert "try { prompts = $('Build Prompt').all(); }" in code, (
+            f"{name} would throw on a run where every preview was cached"
+        )
+
+
+def test_the_span_builder_does_not_average_over_an_empty_prompt_list():
+    """`Math.min(...[])` is `Infinity`, which would make the root span's
+    start time — and every duration derived from it — nonsense."""
+    assert "prompts.length > 0 ? Math.min(" in workflow.span_builder_code()
+
+
+def test_the_consumer_clears_the_junk_cache_key_the_bug_wrote():
+    """Every broken run wrote `setlistPreviews["undefined"]`. No artist_id ever
+    matches it, so it is dead weight that only a run can remove."""
+    code = workflow.consumer_code()
+    assert "delete staticData.setlistPreviews['undefined'];" in code
+    assert "if (!aid) continue;" in code, "a blank artist_id could write it again"
