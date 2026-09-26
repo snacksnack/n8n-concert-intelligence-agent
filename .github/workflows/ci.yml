@@ -31,5 +31,14 @@ jobs:
       # Layer 1: the prompt contract and the assumptions Attach Previews makes,
       # read out of the committed workflow JSON. No credentials, no tokens. The
       # billed half (`python -m evals`) is run by hand — see docs/rc1-258-evals.md.
+      # RC1-452: --ddtrace reports test-level results to Test Optimization,
+      # agentless. Until the DD_API_KEY secret exists here, the plugin logs
+      # an error and runs the suite untouched — the check never weakens.
       - name: Test (pytest)
-        run: pytest
+        env:
+          DD_API_KEY: ${{ secrets.DD_API_KEY }}
+          DD_CIVISIBILITY_AGENTLESS_ENABLED: "true"
+          DD_SITE: datadoghq.com
+          DD_SERVICE: n8n-concert-intelligence-agent
+          DD_ENV: ci
+        run: pytest --ddtrace
