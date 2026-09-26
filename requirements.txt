@@ -10,3 +10,6 @@ anthropic>=0.40
 # The shared eval harness. Pinned by tag — if the ruler can move under a run, a
 # changed score no longer says whether the prompt drifted or the measurement did.
 agent-evals[sql] @ git+https://github.com/snacksnack/agent-evals@v0.3.2
+
+# RC1-452: the Test Optimization reporter for the pytest layer.
+ddtrace>=4.14,<5
