@@ -34,3 +34,6 @@ __pycache__/
 .ruff_cache/
 .venv/
 eval-runs/
+.coverage
+.coverage.*
+htmlcov/

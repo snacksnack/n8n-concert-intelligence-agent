@@ -13,3 +13,7 @@ agent-evals[sql] @ git+https://github.com/snacksnack/agent-evals@v0.3.2
 
 # RC1-452: the Test Optimization reporter for the pytest layer.
 ddtrace>=4.14,<5
+
+# RC1-468: line coverage for that layer; ddtrace reports it as
+# test.code_coverage.lines_pct.
+pytest-cov>=6.0

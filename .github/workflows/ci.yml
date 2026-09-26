@@ -34,6 +34,9 @@ jobs:
       # RC1-452: --ddtrace reports test-level results to Test Optimization,
       # agentless. Until the DD_API_KEY secret exists here, the plugin logs
       # an error and runs the suite untouched — the check never weakens.
+      # RC1-468: --cov adds line coverage; ddtrace reports it as
+      # test.code_coverage.lines_pct. Coverage is a signal, not a gate — no
+      # threshold fails this step.
       - name: Test (pytest)
         env:
           DD_API_KEY: ${{ secrets.DD_API_KEY }}
@@ -41,4 +44,4 @@ jobs:
           DD_SITE: datadoghq.com
           DD_SERVICE: n8n-concert-intelligence-agent
           DD_ENV: ci
-        run: pytest --ddtrace
+        run: pytest --ddtrace --cov

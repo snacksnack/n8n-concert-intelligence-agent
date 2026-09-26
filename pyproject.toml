@@ -11,6 +11,12 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 [tool.ruff.lint.isort]
 known-first-party = ["evals"]
 
+# RC1-468: coverage measures the tested code — the evals package the
+# Layer 1 suite imports. The workflow JSON itself runs in n8n Cloud and
+# has no measurable Python surface.
+[tool.coverage.run]
+source = ["evals"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
