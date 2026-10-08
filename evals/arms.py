@@ -150,6 +150,13 @@ class AnthropicArm(Arm):
                 url = getattr(citation, "url", None)
                 if url:
                     citations.append(url)
+            # Sources the model retrieved live in the tool-result block even when
+            # the model adds no inline citation to the prose.
+            if getattr(block, "type", None) == "web_search_tool_result":
+                for result in getattr(block, "content", None) or []:
+                    url = getattr(result, "url", None)
+                    if url:
+                        citations.append(url)
         searches = 0
         server_tool_use = getattr(response.usage, "server_tool_use", None)
         if server_tool_use is not None:
@@ -210,6 +217,10 @@ class PerplexityArm(Arm):
                 queries = getattr(item, "queries", None) or []
                 results = getattr(item, "results", None) or []
                 searches = len(queries) or (1 if results else 0)
+                for result in results:
+                    url = getattr(result, "url", None)
+                    if url:
+                        citations.append(url)
             elif kind == "message":
                 for part in getattr(item, "content", None) or []:
                     for annotation in getattr(part, "annotations", None) or []:

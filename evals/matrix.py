@@ -77,7 +77,7 @@ def _score(
         "artist": fixture.artist,
         "seat": seat,
         "searches": response.searches,
-        "citations": len(response.citations),
+        "sources": len(response.citations),
         "output": text,
     }
     if not fixture.shows:
@@ -95,9 +95,9 @@ def _score(
                 name="cites-sources",
                 passed=bool(response.citations),
                 detail=(
-                    f"{len(response.citations)} citation(s) over {response.searches} search(es)"
+                    f"{len(response.citations)} source(s) over {response.searches} search(es)"
                     if response.citations
-                    else "no citations returned — groundedness cannot be traced to a source"
+                    else "no sources returned — the answer cannot be traced to the web"
                 ),
                 advisory=True,
             )
