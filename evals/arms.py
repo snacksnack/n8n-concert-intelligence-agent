@@ -16,19 +16,20 @@ what open-web search adds and costs for the *same* model. Cohere is
 generation-only by necessity: its managed web-search connector was deprecated
 in Sept 2025.
 
-Anthropic goes through its SDK (already a dependency); Cohere and Perplexity go
-through stdlib `urllib` rather than their SDKs — one fewer pinned version to
-drift under a measurement, and the request/response shapes are small and frozen
-here deliberately.
+Every arm goes through its provider's **official SDK** (Anthropic, Cohere,
+Perplexity). For a measurement instrument the SDK owning the response-shape
+parsing matters: a hand-rolled JSON walk that silently mis-reads a renamed field
+would corrupt the score rather than fail. The SDK versions are pinned in
+`requirements.txt` for the same reason the harness itself is pinned.
 """
 
 from __future__ import annotations
 
-import json
-import urllib.error
-import urllib.request
 from dataclasses import dataclass
 from decimal import Decimal
+
+import cohere
+from perplexity import Perplexity
 
 from evals import pricing, workflow
 
@@ -39,10 +40,6 @@ SEAT_GROUNDED = "grounded-web"
 #: string against the live tool-use docs before the arm-4 run — a stale version
 #: is rejected at the API, which is a loud, early failure rather than a silent one.
 ANTHROPIC_WEB_SEARCH_TOOL = "web_search_20250305"
-
-_COHERE_CHAT_URL = "https://api.cohere.com/v2/chat"
-_PERPLEXITY_AGENT_URL = "https://api.perplexity.ai/v1/agent"
-_HTTP_TIMEOUT = 90.0
 
 
 @dataclass(frozen=True)
@@ -60,7 +57,6 @@ class ArmResponse:
     searches: int = 0
     citations: tuple[str, ...] = ()
     reported_cost_usd: Decimal | None = None
-    raw: dict | None = None
 
 
 _GIVEN_CLAUSE = "Given these recent setlists for ${artist.artist_name}"
@@ -96,30 +92,6 @@ def grounded_task_prompt(artist_name: str, *, headliner: str | None = None) -> s
     if headliner:
         out = out.replace("${artist.headliner_name}", headliner)
     return out.replace("\\n", "\n").strip()
-
-
-def _post_json(url: str, body: dict, headers: dict[str, str]) -> dict:
-    """POST `body` as JSON and parse the JSON response, or raise with the body.
-
-    Keeps the error text visible: a 4xx from these providers carries the reason
-    (bad model id, deprecated tool, empty balance), and swallowing it would turn
-    a one-line fix into a guessing game.
-    """
-    payload = json.dumps(body).encode("utf-8")
-    request = urllib.request.Request(  # noqa: S310 — https literals only, below
-        url,
-        data=payload,
-        headers={"Content-Type": "application/json", **headers},
-        method="POST",
-    )
-    if not url.startswith("https://"):
-        raise ValueError(f"refusing a non-https request to {url!r}")
-    try:
-        with urllib.request.urlopen(request, timeout=_HTTP_TIMEOUT) as response:  # noqa: S310
-            return json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", "replace")[:500]
-        raise RuntimeError(f"{url} returned HTTP {exc.code}: {detail}") from exc
 
 
 @dataclass(frozen=True)
@@ -197,67 +169,62 @@ class AnthropicArm(Arm):
 
 @dataclass(frozen=True)
 class CohereArm(Arm):
-    """Cohere Command via the v2 chat endpoint. Generation seat only."""
+    """Cohere Command via the v2 chat endpoint (official SDK). Generation only."""
 
-    api_key: str = ""
+    client: object = None
 
     def generate(self, prompt: str) -> ArmResponse:
-        data = _post_json(
-            _COHERE_CHAT_URL,
-            {"model": self.model, "messages": [{"role": "user", "content": prompt}]},
-            {"Authorization": f"Bearer {self.api_key}"},
+        response = self.client.chat(  # type: ignore[union-attr]
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
         )
-        parts = (data.get("message") or {}).get("content") or []
-        text = "".join(p.get("text", "") for p in parts if p.get("type") == "text")
-        usage = data.get("usage") or {}
-        tokens = usage.get("tokens") or usage.get("billed_units") or {}
+        parts = getattr(response.message, "content", None) or []
+        text = "".join(
+            getattr(p, "text", "") for p in parts if getattr(p, "type", None) == "text"
+        )
+        usage = getattr(response, "usage", None)
+        units = getattr(usage, "billed_units", None) or getattr(usage, "tokens", None)
         return ArmResponse(
             text=text,
-            input_tokens=int(tokens.get("input_tokens") or 0),
-            output_tokens=int(tokens.get("output_tokens") or 0),
-            raw=data,
+            input_tokens=int(getattr(units, "input_tokens", 0) or 0),
+            output_tokens=int(getattr(units, "output_tokens", 0) or 0),
         )
 
 
 @dataclass(frozen=True)
 class PerplexityArm(Arm):
-    """Perplexity Sonar via the Agent API, web_search on for the grounded seat."""
+    """Perplexity Sonar via the Agent API (official SDK), web_search on the web seat."""
 
-    api_key: str = ""
+    client: object = None
 
     def generate(self, prompt: str) -> ArmResponse:
-        body: dict = {"model": self.model, "input": prompt}
+        kwargs: dict = {"model": self.model, "input": prompt}
         if self.seat == SEAT_GROUNDED:
-            body["tools"] = [{"type": "web_search"}]
-        data = _post_json(
-            _PERPLEXITY_AGENT_URL, body, {"Authorization": f"Bearer {self.api_key}"}
-        )
-        text = ""
+            kwargs["tools"] = [{"type": "web_search"}]
+        response = self.client.responses.create(**kwargs)  # type: ignore[union-attr]
         citations: list[str] = []
         searches = 0
-        for item in data.get("output") or []:
-            kind = item.get("type")
-            if kind == "message":
-                for part in item.get("content") or []:
-                    if part.get("type") == "output_text":
-                        text += part.get("text", "")
-                    for annotation in part.get("annotations") or []:
-                        if annotation.get("type") == "url_citation" and annotation.get("url"):
-                            citations.append(annotation["url"])
-            elif kind == "search_results":
-                queries = item.get("queries") or []
-                results = item.get("results") or []
+        for item in getattr(response, "output", None) or []:
+            kind = getattr(item, "type", None)
+            if kind == "search_results":
+                queries = getattr(item, "queries", None) or []
+                results = getattr(item, "results", None) or []
                 searches = len(queries) or (1 if results else 0)
-        usage = data.get("usage") or {}
-        reported = (usage.get("cost") or {}).get("total_cost")
+            elif kind == "message":
+                for part in getattr(item, "content", None) or []:
+                    for annotation in getattr(part, "annotations", None) or []:
+                        url = getattr(annotation, "url", None)
+                        if getattr(annotation, "type", None) == "url_citation" and url:
+                            citations.append(url)
+        usage = getattr(response, "usage", None)
+        total_cost = getattr(getattr(usage, "cost", None), "total_cost", None)
         return ArmResponse(
-            text=text,
-            input_tokens=int(usage.get("input_tokens") or 0),
-            output_tokens=int(usage.get("output_tokens") or 0),
+            text=getattr(response, "output_text", "") or "",
+            input_tokens=int(getattr(usage, "input_tokens", 0) or 0),
+            output_tokens=int(getattr(usage, "output_tokens", 0) or 0),
             searches=searches,
             citations=tuple(dict.fromkeys(citations)),
-            reported_cost_usd=None if reported is None else Decimal(str(reported)),
-            raw=data,
+            reported_cost_usd=None if total_cost is None else Decimal(str(total_cost)),
         )
 
 
@@ -306,7 +273,7 @@ def build_arms(
             provider="cohere",
             model=cohere_model,
             experiments=(1,),
-            api_key=cohere_key,
+            client=cohere.ClientV2(api_key=cohere_key),
         )
     if perplexity_key:
         arms["sonar-gen"] = PerplexityArm(
@@ -315,7 +282,7 @@ def build_arms(
             provider="perplexity",
             model=perplexity_model,
             experiments=(1,),
-            api_key=perplexity_key,
+            client=Perplexity(api_key=perplexity_key),
         )
         arms["sonar-web"] = PerplexityArm(
             name="sonar-web",
@@ -323,6 +290,6 @@ def build_arms(
             provider="perplexity",
             model=perplexity_model,
             experiments=(2,),
-            api_key=perplexity_key,
+            client=Perplexity(api_key=perplexity_key),
         )
     return arms
