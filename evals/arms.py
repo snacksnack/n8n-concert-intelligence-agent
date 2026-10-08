@@ -25,6 +25,7 @@ would corrupt the score rather than fail. The SDK versions are pinned in
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from decimal import Decimal
 
@@ -35,6 +36,29 @@ from evals import pricing, workflow
 
 SEAT_GENERATION = "generation"
 SEAT_GROUNDED = "grounded-web"
+
+#: Rate-limit backoff for the metered third-party arms. Cohere's trial key is
+#: 20 calls/min and Perplexity's has its own ceiling, so a burst of 25 artists
+#: trips a 429; wait and retry rather than lose the case.
+_MAX_RETRIES = 6
+_BACKOFF_BASE = 8.0
+
+
+def _is_rate_limit(exc: Exception) -> bool:
+    return getattr(exc, "status_code", None) == 429 or "TooManyRequests" in type(exc).__name__
+
+
+def _with_retry(call):
+    """Run `call()`, backing off on a 429 up to the minute window, then give up."""
+    for attempt in range(_MAX_RETRIES):
+        try:
+            return call()
+        except Exception as exc:  # noqa: BLE001 — only a rate limit is retried; the rest re-raise
+            if _is_rate_limit(exc) and attempt < _MAX_RETRIES - 1:
+                time.sleep(_BACKOFF_BASE * (2**attempt))
+                continue
+            raise
+    raise RuntimeError("unreachable")  # pragma: no cover
 
 #: Anthropic Messages web-search tool. The 2026 revision (dynamic filtering)
 #: supersedes web_search_20250305; verified live by the arm-4 smoke test. A stale
@@ -181,9 +205,11 @@ class CohereArm(Arm):
     client: object = None
 
     def generate(self, prompt: str) -> ArmResponse:
-        response = self.client.chat(  # type: ignore[union-attr]
-            model=self.model,
-            messages=[{"role": "user", "content": prompt}],
+        response = _with_retry(
+            lambda: self.client.chat(  # type: ignore[union-attr]
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+            )
         )
         parts = getattr(response.message, "content", None) or []
         text = "".join(
@@ -208,7 +234,7 @@ class PerplexityArm(Arm):
         kwargs: dict = {"model": self.model, "input": prompt}
         if self.seat == SEAT_GROUNDED:
             kwargs["tools"] = [{"type": "web_search"}]
-        response = self.client.responses.create(**kwargs)  # type: ignore[union-attr]
+        response = _with_retry(lambda: self.client.responses.create(**kwargs))  # type: ignore[union-attr]
         citations: list[str] = []
         searches = 0
         for item in getattr(response, "output", None) or []:
