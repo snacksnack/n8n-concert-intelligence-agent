@@ -36,10 +36,10 @@ from evals import pricing, workflow
 SEAT_GENERATION = "generation"
 SEAT_GROUNDED = "grounded-web"
 
-#: Anthropic Messages web-search tool. TODO(RC1-505): confirm this version
-#: string against the live tool-use docs before the arm-4 run — a stale version
-#: is rejected at the API, which is a loud, early failure rather than a silent one.
-ANTHROPIC_WEB_SEARCH_TOOL = "web_search_20250305"
+#: Anthropic Messages web-search tool. The 2026 revision (dynamic filtering)
+#: supersedes web_search_20250305; verified live by the arm-4 smoke test. A stale
+#: version is rejected at the API — a loud, early failure rather than a silent one.
+ANTHROPIC_WEB_SEARCH_TOOL = "web_search_20260209"
 
 
 @dataclass(frozen=True)
