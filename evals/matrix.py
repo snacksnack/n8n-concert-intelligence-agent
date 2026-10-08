@@ -39,7 +39,7 @@ from agent_evals.record import (
 )
 from agent_evals.runner import exit_code, print_result, record_run
 
-from evals import arms, fixtures, subject, workflow
+from evals import arms, eval_set, fixtures, subject, workflow
 
 SUBJECT = "concert-matrix"
 DEFAULT_STORE = Path("eval-runs/matrix.jsonl")
@@ -211,6 +211,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-searches", type=int, default=3, help="web_search cap per call")
     parser.add_argument("--store", type=Path, default=DEFAULT_STORE, help="local JSONL run store")
     parser.add_argument("--dry-run", action="store_true", help="print the plan and exit, no spend")
+    parser.add_argument(
+        "--goldens", action="store_true", help="use the 3 built-in fixtures, not the eval set"
+    )
     args = parser.parse_args(argv)
 
     available = _build_arms(args.max_searches)
@@ -221,7 +224,9 @@ def main(argv: list[str] | None = None) -> int:
         and (args.arm is None or name in args.arm)
     }
 
-    cases = list(fixtures.FIXTURES)
+    frozen = () if args.goldens else eval_set.load()
+    cases = list(frozen) if frozen else list(fixtures.FIXTURES)
+    source = "eval-set" if frozen else "goldens"
     if args.case:
         cases = [f for f in cases if f.id == args.case]
         if not cases:
@@ -242,7 +247,7 @@ def main(argv: list[str] | None = None) -> int:
         if missing:
             print(f"arms skipped (no key): {', '.join(missing)}")
         print(f"arms selected: {', '.join(selected) or '(none)'}")
-        print(f"fixtures: {', '.join(f.id for f in cases)}\n")
+        print(f"fixtures ({source}): {', '.join(f.id for f in cases)}\n")
         sample = cases[0] if cases else fixtures.FIXTURES[0]
         print("--- sample generation prompt ---")
         print(workflow.build_preview_prompt(sample.artist, sample.shows, headliner=sample.headliner)
