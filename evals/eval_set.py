@@ -37,6 +37,29 @@ ARTISTS_PATH = QA_DIR / "artists.json"
 SELECTION_PATH = QA_DIR / "eval-set-artists.json"
 ORACLE_PATH = QA_DIR / "eval-setlists.json"
 
+#: Cohorts for honest analysis (see RC1-505). setlist.fm matches some artist
+#: names to tribute/cover acts or long-inactive originals, so grading every arm
+#: against that data is only clean for currently-touring acts. The headline
+#: metrics run on `active`; `tribute` and `stale` are the trusted-source
+#: failure-mode exhibit (does an arm write a confident preview of a 2026 "show"
+#: by a band that broke up decades ago, or catch it?). Editable by hand.
+COHORTS: dict[str, str] = {
+    "the-smiths": "tribute",  # split 1987; 2026 Sony Hall date is a tribute act
+    "david-bowie": "tribute",  # d. 2016
+    "tom-petty": "tribute",  # d. 2017; 2026 "Rancho Victoria Vineyard"
+    "r-e-m": "tribute",  # split 2011; 2026 brewery gig
+    "inxs": "tribute",  # original lineup defunct
+    "taylor-swift": "tribute",  # "Ross House", 25 songs — a covers act, not her
+    "polvo": "stale",  # real, but newest setlist is 2011
+    "yazoo": "stale",  # real, but newest setlist is 2011
+}
+
+
+def cohort(fixture_id: str) -> str:
+    """Analysis cohort for an eval-set artist; `active` unless tagged otherwise."""
+    return COHORTS.get(fixture_id, "active")
+
+
 SEED = 1505  # RC1-505; fixed so the selection is reproducible
 DEFAULT_N = 25  # over-sample; fetch keeps the artists with real setlist data
 MAX_SHOWS = 3  # recent non-empty setlists kept per artist

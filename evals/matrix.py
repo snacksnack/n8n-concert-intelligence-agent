@@ -39,7 +39,7 @@ from agent_evals.record import (
 )
 from agent_evals.runner import exit_code, print_result, record_run
 
-from evals import arms, eval_set, fixtures, subject, workflow
+from evals import arms, eval_set, fixtures, observability, subject, workflow
 
 SUBJECT = "concert-matrix"
 DEFAULT_STORE = Path("eval-runs/matrix.jsonl")
@@ -105,26 +105,50 @@ def _score(
     return characteristics, observations
 
 
-def _run_one(arm: arms.Arm, fixture: fixtures.Fixture) -> CaseResult:
+def _run_one(
+    arm: arms.Arm,
+    fixture: fixtures.Fixture,
+    *,
+    llmobs: object | None = None,
+    cohort: str = "active",
+    version: str = "",
+) -> CaseResult:
     prompt = _prompt_for(arm, fixture)
     started = time.perf_counter()
-    try:
-        response = arm.generate(prompt)
-    except Exception as exc:  # noqa: BLE001 — an arm failure is a recorded error, not a crash
-        return CaseResult(
-            case_id=fixture.id,
-            usage=Usage(latency_ms=(time.perf_counter() - started) * 1000),
-            error=f"{type(exc).__name__}: {exc}",
+    with observability.llm_span(llmobs, arm) as span:
+        try:
+            response = arm.generate(prompt)
+        except Exception as exc:  # noqa: BLE001 — an arm failure is a recorded error, not a crash
+            return CaseResult(
+                case_id=fixture.id,
+                usage=Usage(latency_ms=(time.perf_counter() - started) * 1000),
+                error=f"{type(exc).__name__}: {exc}",
+            )
+        latency_ms = (time.perf_counter() - started) * 1000
+        cost = arm.cost(response)
+        observability.annotate(
+            llmobs,
+            span,
+            arm=arm,
+            artist=fixture.artist,
+            cohort=cohort,
+            prompt=prompt,
+            text=response.text,
+            input_tokens=response.input_tokens,
+            output_tokens=response.output_tokens,
+            searches=response.searches,
+            cost=cost,
+            version=version,
         )
-    latency_ms = (time.perf_counter() - started) * 1000
     characteristics, observations = _score(fixture, arm.seat, response)
+    observations["cohort"] = cohort
     return CaseResult(
         case_id=fixture.id,
         characteristics=characteristics,
         usage=Usage(
             input_tokens=response.input_tokens,
             output_tokens=response.output_tokens,
-            cost_usd=arm.cost(response),
+            cost_usd=cost,
             latency_ms=latency_ms,
         ),
         observations=observations,
@@ -214,6 +238,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--goldens", action="store_true", help="use the 3 built-in fixtures, not the eval set"
     )
+    parser.add_argument(
+        "--datadog", action="store_true", help="also emit LLM Obs spans (needs DD_API_KEY)"
+    )
     args = parser.parse_args(argv)
 
     available = _build_arms(args.max_searches)
@@ -263,19 +290,25 @@ def main(argv: list[str] | None = None) -> int:
     sha = _git_sha()
     per_arm: dict[str, list[CaseResult]] = {}
     overall: list[CaseResult] = []
-    for name, arm in selected.items():
-        arm_cases = [f for f in cases if _applicable(arm, f)]
-        print(
-            f"\n## {name} ({arm.seat}, {arm.model}) — "
-            f"{len(arm_cases)} case(s), this spends money"
-        )
-        started = datetime.now(UTC)
-        results = [_run_one(arm, f) for f in arm_cases]
-        for r in results:
-            print_result(r)
-        record_run(_version(arm, sha), started, results, store=RunStore(args.store))
-        per_arm[name] = results
-        overall.extend(results)
+    with observability.tracing(args.datadog, version=sha) as llmobs:
+        if args.datadog and llmobs is None:
+            print("note: --datadog set but DD_API_KEY absent — LLM Obs skipped\n", file=sys.stderr)
+        for name, arm in selected.items():
+            arm_cases = [f for f in cases if _applicable(arm, f)]
+            print(
+                f"\n## {name} ({arm.seat}, {arm.model}) — "
+                f"{len(arm_cases)} case(s), this spends money"
+            )
+            started = datetime.now(UTC)
+            results = [
+                _run_one(arm, f, llmobs=llmobs, cohort=eval_set.cohort(f.id), version=sha)
+                for f in arm_cases
+            ]
+            for r in results:
+                print_result(r)
+            record_run(_version(arm, sha), started, results, store=RunStore(args.store))
+            per_arm[name] = results
+            overall.extend(results)
 
     _summary(per_arm, selected)
     if missing:
