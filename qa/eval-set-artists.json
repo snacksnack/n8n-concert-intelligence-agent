@@ -1,0 +1,178 @@
+[
+  {
+    "id": "6mKqFxGMS5TGDZI3XkT5Rt",
+    "name": "Angel Olsen",
+    "genres": []
+  },
+  {
+    "id": "4I2BJf80C0skQpp1sQmA0h",
+    "name": "Belle and Sebastian",
+    "genres": [
+      "baroque pop"
+    ]
+  },
+  {
+    "id": "6qqNVTkY8uBg9cP3Jd7DAH",
+    "name": "Billie Eilish",
+    "genres": []
+  },
+  {
+    "id": "41MozSoPIsD1dJM0CLPjZF",
+    "name": "BLACKPINK",
+    "genres": [
+      "k-pop"
+    ]
+  },
+  {
+    "id": "6LEeAFiJF8OuPx747e1wxR",
+    "name": "Blood Orange",
+    "genres": [
+      "art pop"
+    ]
+  },
+  {
+    "id": "3kbBWco9PZ5eSQsNScwG6U",
+    "name": "Built To Spill",
+    "genres": [
+      "indie rock",
+      "alternative rock"
+    ]
+  },
+  {
+    "id": "6MDME20pz9RveH9rEXvrOM",
+    "name": "Clean Bandit",
+    "genres": []
+  },
+  {
+    "id": "0oSGxfWSnnOXhD2fKuz2Gy",
+    "name": "David Bowie",
+    "genres": [
+      "glam rock",
+      "art rock"
+    ]
+  },
+  {
+    "id": "0WCo84qtCKfbyIf1lqQWB4",
+    "name": "Geese",
+    "genres": [
+      "art rock"
+    ]
+  },
+  {
+    "id": "4tuJ0bMpJh08umKkEXKUI5",
+    "name": "Gracie Abrams",
+    "genres": []
+  },
+  {
+    "id": "1eClJfHLoDI4rZe5HxzBFv",
+    "name": "INXS",
+    "genres": []
+  },
+  {
+    "id": "1Vvvx45Apu6dQqwuZQxtgW",
+    "name": "Kidz Bop Kids",
+    "genres": [
+      "children's music"
+    ]
+  },
+  {
+    "id": "1HY2Jd0NmPuamShAr6KMms",
+    "name": "Lady Gaga",
+    "genres": [
+      "art pop",
+      "pop"
+    ]
+  },
+  {
+    "id": "066X20Nz7iquqkkCW6Jxy6",
+    "name": "LCD Soundsystem",
+    "genres": [
+      "alternative dance",
+      "new rave"
+    ]
+  },
+  {
+    "id": "1McMsnEElThX1knmY4oliG",
+    "name": "Olivia Rodrigo",
+    "genres": []
+  },
+  {
+    "id": "0pbIqPTefLfuOcbM2ojXdl",
+    "name": "Polvo",
+    "genres": [
+      "math rock",
+      "noise rock",
+      "post-hardcore",
+      "post-rock",
+      "slowcore"
+    ]
+  },
+  {
+    "id": "4KWTAlx2RvbpseOGMEmROg",
+    "name": "R.E.M.",
+    "genres": [
+      "jangle pop",
+      "alternative rock",
+      "rock"
+    ]
+  },
+  {
+    "id": "5INjqkS1o8h1imAzPqGZBb",
+    "name": "Tame Impala",
+    "genres": [
+      "neo-psychedelic",
+      "indie"
+    ]
+  },
+  {
+    "id": "45dkTj5sMRSjrmBSBeiHym",
+    "name": "Tate McRae",
+    "genres": []
+  },
+  {
+    "id": "06HL4z0CvFAxyc27GXpf02",
+    "name": "Taylor Swift",
+    "genres": []
+  },
+  {
+    "id": "7bu3H8JO7d0UbMoVzbo70s",
+    "name": "The Cure",
+    "genres": [
+      "new wave",
+      "post-punk",
+      "gothic rock",
+      "darkwave"
+    ]
+  },
+  {
+    "id": "3yY2gUcIsjMr8hjo51PoJ8",
+    "name": "The Smiths",
+    "genres": [
+      "new wave",
+      "madchester",
+      "jangle pop"
+    ]
+  },
+  {
+    "id": "2UZMlIwnkgAEDBsw1Rejkn",
+    "name": "Tom Petty",
+    "genres": [
+      "classic rock"
+    ]
+  },
+  {
+    "id": "4j7DrazfBZLLD0OrVoAtEe",
+    "name": "Wednesday",
+    "genres": [
+      "alt country"
+    ]
+  },
+  {
+    "id": "1G1mX30GpUJqOr1QU2eBSs",
+    "name": "Yazoo",
+    "genres": [
+      "synthpop",
+      "new wave"
+    ]
+  }
+]

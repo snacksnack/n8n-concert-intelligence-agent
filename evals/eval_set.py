@@ -41,8 +41,17 @@ SEED = 1505  # RC1-505; fixed so the selection is reproducible
 DEFAULT_N = 25  # over-sample; fetch keeps the artists with real setlist data
 MAX_SHOWS = 3  # recent non-empty setlists kept per artist
 SETLIST_SEARCH_URL = "https://api.setlist.fm/rest/1.0/search/setlists"
-_RATE_SLEEP = 0.6  # setlist.fm free tier is ~2 req/s
+_RATE_SLEEP = 1.1  # setlist.fm free tier rate-limits aggressively; pace below 1 req/s
+_MAX_RETRIES = 5
 _HTTP_TIMEOUT = 30.0
+
+
+class _RateLimited(Exception):
+    """A 429 from setlist.fm, carrying any Retry-After hint (seconds)."""
+
+    def __init__(self, retry_after: float) -> None:
+        super().__init__("rate limited")
+        self.retry_after = retry_after
 
 
 def _slug(name: str) -> str:
@@ -66,20 +75,33 @@ def _get_json(url: str, headers: dict[str, str]) -> dict:
     request = urllib.request.Request(url, headers=headers, method="GET")  # noqa: S310
     if not url.startswith("https://"):
         raise ValueError(f"refusing a non-https request to {url!r}")
-    with urllib.request.urlopen(request, timeout=_HTTP_TIMEOUT) as response:  # noqa: S310
-        return json.loads(response.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(request, timeout=_HTTP_TIMEOUT) as response:  # noqa: S310
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        if exc.code == 429:
+            hint = exc.headers.get("Retry-After", "")
+            raise _RateLimited(float(hint) if hint.isdigit() else 0.0) from exc
+        raise
 
 
 def _shows_for(artist_name: str, api_key: str) -> list[dict]:
     """Recent non-empty setlists for one artist, newest first, in Fixture shape."""
     query = urllib.parse.urlencode({"artistName": artist_name, "p": 1})
     headers = {"x-api-key": api_key, "Accept": "application/json"}
-    try:
-        data = _get_json(f"{SETLIST_SEARCH_URL}?{query}", headers)
-    except urllib.error.HTTPError as exc:
-        if exc.code == 404:  # setlist.fm returns 404 for "nothing found"
-            return []
-        raise
+    data: dict = {}
+    for attempt in range(_MAX_RETRIES):
+        try:
+            data = _get_json(f"{SETLIST_SEARCH_URL}?{query}", headers)
+            break
+        except _RateLimited as exc:
+            time.sleep(max(exc.retry_after, 2.0**attempt))  # honor Retry-After, else backoff
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:  # setlist.fm returns 404 for "nothing found"
+                return []
+            raise
+    else:
+        raise RuntimeError(f"still rate-limited after {_MAX_RETRIES} retries")
     shows: list[dict] = []
     for setlist in data.get("setlist", []):
         sets = []
@@ -115,7 +137,11 @@ def fetch(api_key: str | None = None) -> list[dict]:
     selection = json.loads(SELECTION_PATH.read_text())
     frozen: list[dict] = []
     for artist in selection:
-        shows = _shows_for(artist["name"], api_key)
+        try:
+            shows = _shows_for(artist["name"], api_key)
+        except (RuntimeError, urllib.error.URLError) as exc:  # skip, don't lose the run
+            print(f"  {artist['name']}: error ({exc}) — skipped")
+            continue
         print(f"  {artist['name']}: {len(shows)} show(s)" + ("" if shows else " — dropped"))
         if shows:
             frozen.append(
