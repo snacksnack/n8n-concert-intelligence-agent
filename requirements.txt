@@ -7,6 +7,13 @@ ruff>=0.7
 # Layer 2 only: builds the prompt and calls the Messages API directly.
 anthropic>=0.40
 
+# RC1-505 provider matrix (python -m evals.matrix): the Cohere and Perplexity
+# arms go through their official SDKs. Pinned exactly — a response shape that
+# shifts under a run would change a score without changing the prompt, the same
+# reason agent-evals is pinned below.
+cohere==7.2.0
+perplexityai==0.43.8
+
 # The shared eval harness. Pinned by tag — if the ruler can move under a run, a
 # changed score no longer says whether the prompt drifted or the measurement did.
 agent-evals[sql] @ git+https://github.com/snacksnack/agent-evals@v0.3.2
